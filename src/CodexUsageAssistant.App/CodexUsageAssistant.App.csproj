@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\CodexUsageAssistant.ico</ApplicationIcon>
+    <AssemblyName>CodexEzMate</AssemblyName>
+    <Product>Codex EzMate</Product>
+    <Title>Codex EzMate</Title>
+    <Description>Codex EzMate desktop usage and App Server companion</Description>
+    <RootNamespace>CodexUsageAssistant</RootNamespace>
+    <Version>1.21.0</Version>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CodexEzMate.UpdateCore\CodexEzMate.UpdateCore.csproj" />
+    <Content Include="assets\fluent\LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Resource Include="Assets\CodexUsageAssistant.ico" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="FlaUI.Core" Version="5.0.0" />
+    <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.7" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.15" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.10" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+  </PropertyGroup>
+  <Import Project="../../installer/CompactLayout.targets" Condition="Exists('../../installer/CompactLayout.targets')" />
+  <Target Name="RequireLocalPackagingTools" BeforeTargets="Publish"
+          Condition="'$(CompactPackageRoot)' != '' and !Exists('../../installer/CompactLayout.targets')">
+    <Error Text="Compact package publishing requires the maintainer's local packaging tools. Standard builds do not require them." />
+  </Target>
+</Project>

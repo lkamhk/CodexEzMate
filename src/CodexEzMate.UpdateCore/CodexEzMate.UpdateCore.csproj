@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(UpdaterPublicKeyFile)')">
+    <EmbeddedResource Include="$(UpdaterPublicKeyFile)" LogicalName="CodexEzMate.UpdaterPublicKey.pem" />
+  </ItemGroup>
+  <Target Name="ValidateUpdaterKey" BeforeTargets="BeforeBuild" Condition="'$(UpdaterEnabled)' == 'true'">
+    <Error Condition="!Exists('$(UpdaterPublicKeyFile)')" Text="Signed updater requires UpdaterPublicKeyFile." />
+  </Target>
+</Project>

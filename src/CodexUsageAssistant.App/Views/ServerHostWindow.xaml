@@ -1,0 +1,39 @@
+<Window x:Class="CodexUsageAssistant.Views.ServerHostWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="{DynamicResource HostWindowTitle}" Width="900" Height="660" MinWidth="760" MinHeight="500"
+ Icon="pack://application:,,,/CodexEzMate;component/Assets/CodexUsageAssistant.ico"
+ WindowStartupLocation="CenterScreen" Background="#EAF1F5" Foreground="#243B49">
+  <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="/CodexEzMate;component/Resources/SettingsStyles.xaml"/>
+  </ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
+  <DockPanel Margin="20" Background="#EAF1F5">
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+      <Button Content="{DynamicResource Save}" Click="OnSaveClick" Padding="20,7" Margin="0,0,8,0"/>
+      <Button Content="{DynamicResource CloseWindow}" Click="OnCancelClick" Padding="16,7"/>
+    </StackPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="18">
+            <TextBlock Text="{DynamicResource HostTitle}" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock Text="{DynamicResource HostHelp}" TextWrapping="Wrap" Foreground="#718690" Margin="0,8,0,12"/>
+            <CheckBox x:Name="HostAutoStartCheckBox" Content="{DynamicResource HostAutoStart}" Margin="0,0,0,12"/>
+            <TextBlock Text="{DynamicResource HostExecutable}"/>
+            <DockPanel Margin="0,5,0,10"><Button Content="..." Click="OnHostBrowse" DockPanel.Dock="Right" Width="35" Margin="8,0,0,0"/><Button Content="{DynamicResource HostDetect}" Click="OnHostDetect" DockPanel.Dock="Right" Padding="8,0" Margin="8,0,0,0"/><TextBox x:Name="HostPathTextBox" Padding="6"/></DockPanel>
+            <DockPanel Margin="0,0,0,10"><TextBlock Text="{DynamicResource HostPort}" Width="120" VerticalAlignment="Center"/><TextBox x:Name="HostPortTextBox" Width="80" HorizontalAlignment="Left" Padding="6"/></DockPanel>
+            <TextBlock Text="{DynamicResource HostWork}"/>
+            <TextBox x:Name="HostWorkTextBox" Padding="6" Margin="0,5,0,10"/>
+            <TextBlock x:Name="HostStatusText" TextWrapping="Wrap" Foreground="#397C9D" Margin="0,0,0,12"/>
+            <WrapPanel x:Name="HostActionsPanel">
+              <Button Content="{DynamicResource HostStart}" Click="OnHostStart" Padding="9,6" Margin="0,0,6,6"/>
+              <Button Content="{DynamicResource HostStop}" Click="OnHostStop" Padding="9,6" Margin="0,0,6,6"/>
+              <Button Content="{DynamicResource HostRestart}" Click="OnHostRestart" Padding="9,6" Margin="0,0,6,6"/>
+              <Button Content="{DynamicResource HostCheck}" Click="OnHostCheck" Padding="9,6" Margin="0,0,6,6"/>
+              <Button Content="{DynamicResource HostLogin}" Click="OnHostLogin" Padding="9,6" Margin="0,0,6,6"/>
+              <Button Content="{DynamicResource HostModels}" Click="OnHostModels" Padding="9,6" Margin="0,0,6,6"/>
+            </WrapPanel>
+            <Button Content="{DynamicResource HostCancelLogin}" Click="OnHostCancelLogin" HorizontalAlignment="Left" Padding="9,6"/>
+          </StackPanel>
+        </ScrollViewer>
+  </DockPanel>
+</Window>

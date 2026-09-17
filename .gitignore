@@ -1,0 +1,125 @@
+# IDE and local workspace state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# .NET build and test output
+[Bb]in/
+[Oo]bj/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.pdb
+*.nupkg
+*.snupkg
+
+# Python environments, caches and compiler output
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.build/
+*.dist/
+*.onefile-build/
+*.egg-info/
+*.spec
+/build_nuitka/
+
+# Generated portable packages and bundled runtimes
+/Codex-EzMate-win-*/
+/Codex-helper-win-*/
+*.zip
+*.zip.sig
+*.7z
+*.rar
+runtime/
+node_modules/
+
+# Maintainer-only packaging, deployment and configuration
+/installer/
+/supabase/
+/updater/
+/settings/
+/setting/
+/codexSessionBrowser/settings/
+*.local.json
+*.local.toml
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Credentials and signing secrets (public keys are safe to version)
+*.pem
+*.key
+*.pfx
+*.p12
+*.p8
+*.ppk
+id_rsa
+id_ed25519
+auth.json
+credentials.json
+
+# Runtime state, browser profiles, conversations and backups
+logs/
+*.log
+*.dmp
+*.tmp
+*.bak
+_browser_profiles/
+WebView2/
+*.WebView2/
+app-server-work/
+codex_session_bkup/
+session_browser_trash/
+sessions/
+archived_sessions/
+*.jsonl
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+
+# Local page captures and generated UI previews
+/offline HTML/
+/Codex_usage_files/
+/assets/previews/
+
+# AI-only tools and instructions stay local; product tests live in tests/
+/.codex/
+/.agents/
+/.claude/
+/.cursor/
+/.mcp.json
+AGENTS.md
+CLAUDE.md
+/AI_*_GUIDE.md
+*.private.md
+
+# Supabase CLI local state
+/supabase/.temp/
+/supabase/.branches/
+
+# Local build and debug launch scripts
+/打包.bat
+/打包更新.cmd
+/啟動Debug.bat
+/打包安裝.cmd
+
+# Local guides
+/.md/
+/.md/*

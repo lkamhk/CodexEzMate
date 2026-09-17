@@ -1,0 +1,57 @@
+<Window x:Class="CodexUsageAssistant.Views.GoalMonitorWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="{DynamicResource GoalWindowTitle}" Width="1080" Height="760" MinWidth="900" MinHeight="600"
+ Icon="pack://application:,,,/CodexEzMate;component/Assets/CodexUsageAssistant.ico"
+ WindowStartupLocation="CenterScreen" Background="#EAF1F5" Foreground="#243B49">
+  <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="/CodexEzMate;component/Resources/SettingsStyles.xaml"/>
+  </ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
+  <DockPanel Margin="20" Background="#EAF1F5">
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+      <Button Content="{DynamicResource Save}" Click="OnSaveClick" Padding="20,7" Margin="0,0,8,0"/>
+      <Button Content="{DynamicResource CloseWindow}" Click="OnCancelClick" Padding="16,7"/>
+    </StackPanel>
+
+        <Grid Margin="18">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <TextBlock Text="{DynamicResource GoalMonitorTitle}" FontSize="20" FontWeight="SemiBold" />
+          <DockPanel Grid.Row="1" Margin="0,12,0,10">
+            <CheckBox x:Name="AutoResumeEnabledCheckBox" Content="{DynamicResource MonitorAtStartup}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <Button x:Name="ScanConversationsButton" Content="{DynamicResource ScanSidebar}" Click="OnScanConversationsClick" Padding="12,6" />
+              <Button Content="{DynamicResource CheckNow}" Click="OnRunAutoResumeNowClick" Padding="12,6" Margin="6,0,0,0" />
+              <Button Content="{DynamicResource StartMonitoring}" Click="OnStartMonitoringClick" Padding="12,6" Margin="6,0,0,0" />
+              <Button Content="{DynamicResource StopMonitoring}" Click="OnStopMonitoringClick" Padding="12,6" Margin="6,0,0,0" />
+            </StackPanel>
+          </DockPanel>
+          <TextBlock Grid.Row="2" Text="{DynamicResource GoalBackgroundHelp}" Foreground="#718690" TextWrapping="Wrap" />
+          <DataGrid x:Name="ConversationsGrid" Grid.Row="3" Margin="0,10,0,10"
+                    AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                    HeadersVisibility="Column" SelectionMode="Single">
+            <DataGrid.Columns>
+              <DataGridCheckBoxColumn Header="{DynamicResource MonitorColumn}" Binding="{Binding Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="65" />
+              <DataGridTextColumn Header="{DynamicResource ProjectColumn}" Binding="{Binding ProjectName}" IsReadOnly="True" Width="150" />
+              <DataGridTextColumn Header="{DynamicResource ConversationColumn}" Binding="{Binding Title}" IsReadOnly="True" Width="*" MinWidth="220" />
+              <DataGridTextColumn Header="{DynamicResource IdentityColumn}" Binding="{Binding IdentityStatus}" IsReadOnly="True" Width="85" />
+              <DataGridTextColumn Header="{DynamicResource LastResultColumn}" Binding="{Binding LastStatus}" IsReadOnly="True" Width="100" />
+              <DataGridTextColumn Header="{DynamicResource GoalSource}" Binding="{Binding Source}" IsReadOnly="True" Width="90" />
+              <DataGridTextColumn Header="Goal" Binding="{Binding GoalStatus}" IsReadOnly="True" Width="95" />
+              <DataGridTextColumn Header="{DynamicResource GoalCompatibility}" Binding="{Binding Compatibility}" IsReadOnly="True" Width="170" />
+            </DataGrid.Columns>
+          </DataGrid>
+          <StackPanel Grid.Row="4">
+            <WrapPanel Margin="0,0,0,8">
+              <Button x:Name="PauseGoalButton" Content="{DynamicResource PauseBackgroundGoal}" Click="OnPauseGoal" Padding="10,6"/>
+              <Button Content="{DynamicResource ContinuePausedGoal}" Click="OnContinueGoal" Padding="10,6" Margin="8,0,0,0"/>
+              <Button Content="{DynamicResource ReviewGoalRequest}" Click="OnReviewRequest" Padding="10,6" Margin="8,0,0,0"/>
+            </WrapPanel>
+            <ListBox x:Name="PendingRequestsList" Height="70" DisplayMemberPath="DisplayName"/>
+          </StackPanel>
+          <TextBlock x:Name="AutoResumeStatusText" Grid.Row="5" Foreground="#718690" TextWrapping="Wrap" Margin="0,8,0,0" />
+        </Grid>
+  </DockPanel>
+</Window>

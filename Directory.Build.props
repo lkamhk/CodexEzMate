@@ -1,0 +1,9 @@
+<Project>
+  <!-- Release binaries must not disclose local source paths or ship debugging symbols. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <EmbedAllSources>false</EmbedAllSources>
+    <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
+  </PropertyGroup>
+</Project>

@@ -6,13 +6,15 @@
 
 **English** · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md)
 
-A Windows companion for Codex: check remaining usage, manage local conversations, host App Server in the background, and resume selected Goals when quota becomes available again.
+A Windows companion for Codex: check remaining usage, manage local conversations, and host App Server in the background.
 
 **Current source version: 1.21.0** · Windows x64 · .NET 8 / WPF · Traditional Chinese / Simplified Chinese / English
 
 [Download](https://github.com/lkamhk/CodexEzMate/releases) · [Report an issue](https://github.com/lkamhk/CodexEzMate/issues)
 
 **Current releases require manual updates. Automatic application updates are not enabled.**
+
+> **Do not use Goal monitoring: it is still under development.** Keep it disabled. Automatic resumption in the original Codex Desktop conversation is not yet reliable. This warning applies specifically to Goal monitoring.
 
 This is a third-party project, not an official OpenAI product.
 
@@ -33,7 +35,7 @@ These screenshots show the English interface with example usage, conversations, 
 | Reset / Token / Credit | Hover to reveal navigation arrows. View reset expiry dates, daily token bars, and credit information. |
 | Use a reset | Consume one reset after confirmation, prioritizing the earliest-expiring valid item in the returned details, then refresh usage. |
 | Session Browser | Search and preview local conversations, copy IDs, back up, move to Trash, and restore. Internal sessions can be hidden. |
-| Goal monitoring | Resume selected native Goals paused by quota exhaustion through App Server in the background, without foreground clicking. |
+| Goal monitoring | **Under development — do not use.** Automatic Goal resumption is not yet reliable. |
 | Server hosting | Start or reuse a local Codex App Server, with sign-in, connection status, restart controls, and recovery after unexpected exits. |
 | Global shortcuts | Assign shortcuts to open Session Browser, Goal monitoring, Server host, usage details, settings, and other windows. |
 | Usage refresh and preferences | Scheduled and event-triggered usage refresh, proxy settings, and three interface languages. Refreshing usage is separate from updating the application. |
@@ -83,15 +85,13 @@ Previews have size and message-count limits. Use **Open JSONL** to view the full
 
 ### Goal monitoring
 
-> **Experimental feature:** The developer has not personally tested Goal monitoring in actual use. Stability and compatibility still need verification. Decide for yourself whether to enable it; start with non-critical work and monitor the results.
+> **Under development — do not use.** Keep Goal monitoring disabled until a later release explicitly announces that it is ready.
 
-1. Open **Goal monitoring** and scan local conversations.
-2. Select the Goals you allow EzMate to resume, then start monitoring.
-3. When a native Goal is `usageLimited` and the App Server executing the work confirms quota is available, EzMate resumes selected work one at a time in the background.
+Automatic resumption in the original Codex Desktop conversation is not yet reliable, and progress visibility still needs work. CLI and VS Code compatibility also remains unverified. Do not rely on this feature to continue work after a quota reset or close Codex Desktop to force a takeover.
 
-Compatible saved local conversations from CLI, Codex App, and VS Code under the same Windows account are supported. Internal subagent sessions, ephemeral conversations, and remote/WSL working directories are outside the supported scope. Work requiring tools specific to its original client may not be resumable. Do not continue a conversation in another client while EzMate is handling it.
+If already enabled, select **Stop monitoring**, disable monitoring at startup, and save. Stopping monitoring prevents new work from being taken on; if EzMate is currently executing a Goal, use **Pause current work** first.
 
-Command, file-change, and permission requests can be handled through the request review controls. EzMate does not approve them automatically. Stopping monitoring only stops taking on new work; use **Pause current work** to pause the current Goal. Normal automatic checks do not resume manually paused Goals.
+This warning applies to Goal monitoring; it does not ask you to disable usage display, Session Browser, or Server hosting.
 
 ### Server hosting
 

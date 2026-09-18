@@ -4,122 +4,121 @@
 
 # Codex EzMate
 
-**繁體中文** · [English](README.en.md)
+**English** · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md)
 
-Windows 上的 Codex 常駐助手：查看剩餘用量、管理本機會話、代管 App Server，以及在額度恢復後繼續指定的 Goal。
+A Windows companion for Codex: check remaining usage, manage local conversations, host App Server in the background, and resume selected Goals when quota becomes available again.
 
-**目前原始碼版本：1.21.0** · Windows x64 · .NET 8 / WPF · 繁體中文／簡體中文／English
+**Current source version: 1.21.0** · Windows x64 · .NET 8 / WPF · Traditional Chinese / Simplified Chinese / English
 
-[下載版本](https://github.com/lkamhk/CodexEzMate/releases) · [回報問題](https://github.com/lkamhk/CodexEzMate/issues)
+[Download](https://github.com/lkamhk/CodexEzMate/releases) · [Report an issue](https://github.com/lkamhk/CodexEzMate/issues)
 
-**目前發佈的是手動更新版本，不啟用程式自動更新。**
+**Current releases require manual updates. Automatic application updates are not enabled.**
 
-本專案為第三方工具，並非 OpenAI 官方產品。
+This is a third-party project, not an official OpenAI product.
 
-## 介面預覽
+## Screenshots
 
-以下圖片使用示例用量、會話及路徑展示介面，不代表實際帳戶資料；可點擊圖片查看原尺寸。
+These screenshots show the English interface with example usage, conversations, and paths, rather than real account data. Click an image to view it at full size.
 
-| 用量概覽與可用 reset | 每日 Token 圖表 |
+| Usage overview and available resets | Daily token activity |
 | :---: | :---: |
-| [<img src="assets/screenshots/usage-overview.png" alt="Codex Usage 用量概覽與可用 reset" width="300">](assets/screenshots/usage-overview.png) | [<img src="assets/screenshots/token-activity.png" alt="每日 Token 使用量直柱圖" width="300">](assets/screenshots/token-activity.png) |
+| [<img src="assets/screenshots/usage-overview-en.png" alt="Codex Usage overview and available resets" width="300">](assets/screenshots/usage-overview-en.png) | [<img src="assets/screenshots/token-activity-en.png" alt="Daily token usage bar chart" width="300">](assets/screenshots/token-activity-en.png) |
 
-## 功能
+## Features
 
-| 功能 | 說明 |
+| Feature | Description |
 | --- | --- |
-| 用量概覽 | 查看 5 小時／每週剩餘額度、重置時間及帳戶方案。 |
-| 系統匣與浮游球 | 可單獨或同時顯示；系統匣圖示可直接顯示剩餘百分比，缺少 5 小時資料時改用每週額度。 |
-| Reset／Token／Credit | 滑鼠移入顯示切換箭咀；查看 reset 到期日、每日 Token 直柱圖及 Credit 資料。 |
-| 使用 reset | 確認後使用一次 reset，優先選擇明細中最快到期的有效項目，再重新取得額度。 |
-| Session Browser | 搜尋及預覽本機會話、複製 ID、備份、移至回收區及還原；可隱藏內部會話。 |
-| Goal 監控 | 透過 App Server 背景恢復已勾選、因額度耗盡而暫停的原生 Goal，毋須前台點擊。 |
-| Server 代管 | 背景啟動或重用本機 Codex App Server，提供登入、連線狀態、重新啟動及意外退出後恢復。 |
-| 全域快捷鍵 | 自訂快捷鍵開啟 Session Browser、Goal 監控、Server 代管、詳細用量及設定等視窗。 |
-| 用量更新與偏好設定 | 支援定時／事件觸發重新整理用量、Proxy 及三語介面；用量重新整理與程式升版是不同功能。 |
+| Usage overview | View remaining 5-hour and weekly quotas, reset times, and your account plan. |
+| System tray and floating widget | Use either or both. The tray icon can display the remaining percentage, falling back to weekly quota when 5-hour data is unavailable. |
+| Reset / Token / Credit | Hover to reveal navigation arrows. View reset expiry dates, daily token bars, and credit information. |
+| Use a reset | Consume one reset after confirmation, prioritizing the earliest-expiring valid item in the returned details, then refresh usage. |
+| Session Browser | Search and preview local conversations, copy IDs, back up, move to Trash, and restore. Internal sessions can be hidden. |
+| Goal monitoring | Resume selected native Goals paused by quota exhaustion through App Server in the background, without foreground clicking. |
+| Server hosting | Start or reuse a local Codex App Server, with sign-in, connection status, restart controls, and recovery after unexpected exits. |
+| Global shortcuts | Assign shortcuts to open Session Browser, Goal monitoring, Server host, usage details, settings, and other windows. |
+| Usage refresh and preferences | Scheduled and event-triggered usage refresh, proxy settings, and three interface languages. Refreshing usage is separate from updating the application. |
 
-## 安裝與首次使用
+## Installation and first use
 
-1. 從 [Releases](https://github.com/lkamhk/CodexEzMate/releases) 選擇已發佈的安裝版 `Codex-EzMate-<版本>-Setup.exe` 或 portable 版 `Codex-EzMate-win-x64.zip`。若尚未有下載檔，可按下方步驟從原始碼執行。
-2. 安裝版預設安裝至目前使用者的 `%LOCALAPPDATA%\Programs\Codex EzMate`，建立開始選單捷徑，可選擇建立桌面捷徑；portable 版則將**整個 ZIP** 解壓至可寫入的資料夾，再啟動外層 `CodexEzMate.exe`。兩者均需保留 `app/` 資料夾。
-3. 使用已安裝並登入 Codex 的同一 Windows 帳戶執行。套件不包含 `codex.exe`；程式會嘗試偵測路徑，亦可在設定中手動指定。
-4. 從系統匣右鍵開啟「Server 代管」，確認 Codex 路徑及連線狀態；需要登入時使用「登入 Codex」。
-5. 左鍵按系統匣圖示查看詳細用量；右鍵 →「設定」可更改資料來源、更新頻率、語言及顯示方式。
+1. Download an available installer, `Codex-EzMate-<version>-Setup.exe`, or portable package, `Codex-EzMate-win-x64.zip`, from [Releases](https://github.com/lkamhk/CodexEzMate/releases). If no package is available yet, follow the source instructions below.
+2. The installer defaults to `%LOCALAPPDATA%\Programs\Codex EzMate` for the current user, creates a Start menu shortcut, and offers an optional desktop shortcut. For the portable edition, extract the **entire ZIP** to a writable folder and launch the top-level `CodexEzMate.exe`. Keep the `app/` folder in place for either edition.
+3. Run under the same Windows account where Codex is installed and signed in. The package does not include `codex.exe`; EzMate attempts to detect its path, or you can set it manually.
+4. Right-click the tray icon and open **Server host**. Check the Codex path and connection status; use **Sign in to Codex** if needed.
+5. Left-click the tray icon to view usage details. Open **Settings** from the right-click menu to change the data source, refresh interval, language, and display mode.
 
-使用 DOM 網頁資料來源時，需要 Microsoft Edge WebView2 Runtime。
+The DOM/web data source requires Microsoft Edge WebView2 Runtime.
 
+### Data sources and usage
 
-### 資料來源與用量顯示
+Under **Settings → Basic settings**, choose:
 
-「設定 → 基本設定」可選擇：
+- **App Server with DOM fallback** — the default.
+- **App Server only**.
+- **DOM/web only** — shows **Sign in / Get usage** in the right-click menu.
 
-- **App Server 優先，DOM 後備**：預設選項。
-- **只使用 App Server**。
-- **只使用 DOM／網頁**：右鍵選單會顯示「登入／取得額度」。
+Available information depends on the Codex version, account, and fields returned by the backend. Missing data appears as “—” or an explanatory message; it does not mean usage is zero. App Server and the DOM source may be signed in to different accounts, so check which account you are using.
 
-顯示內容取決於 Codex 版本、帳戶及後端提供的欄位。未提供的資料會顯示「—」或相應提示，不代表用量為零。App Server 與 DOM 可能登入不同帳戶，請核對目前使用的帳戶。
+The token chart shows recent daily records. When official data does not yet include today, local conversation token records may provide an estimate marked with `~`. This covers records on this computer only and is not the official account-wide total.
 
-Token 圖表顯示最近的每日記錄；官方資料未包含今日時，可用本機會話的 Token 記錄補充估算，並以 `~` 標示。這只涵蓋此電腦記錄，不等同帳戶官方總用量。
+**Use reset** requires App Server to return an available reset. Confirming the action consumes one reset. Credit values are displayed as returned by the backend, without converting them into currency or tokens.
 
-「使用 reset」需要 App Server 提供可用項目；按下並確認會實際消耗一次 reset。Credit 依後端原值顯示，不推算貨幣或 Token 匯率。
+### Global shortcuts
 
-### 全域快捷鍵
+Open **Keyboard shortcuts** from the right-click menu, select modifiers and a key, then save. Changes take effect immediately.
 
-右鍵 →「快捷鍵設定」，選擇修飾鍵及按鍵後儲存，立即生效。
-
-- 支援 Ctrl／Alt／Win 配合字母、數字或 F1–F11，可額外加入 Shift。
-- 預設全部未指定；例如可自行設定 `Ctrl + Alt + S` 開啟 Session Browser。
-- 可停用全部快捷鍵並保留組合，或選「未設定」清除個別組合。
-- 重複或被佔用的組合會提示錯誤；程式必須保持運行，快捷鍵才有效。
+- Use Ctrl, Alt, or Win with a letter, digit, or F1–F11. Shift can be added.
+- All shortcuts are unassigned by default. For example, you can assign `Ctrl + Alt + S` to Session Browser.
+- Disable all shortcuts while keeping their assignments, or choose **Unassigned** to clear one.
+- Duplicate or unavailable combinations produce an error. EzMate must remain running for its shortcuts to work.
 
 ### Session Browser
 
-[![.NET WPF Session Browser 會話清單及對話預覽](assets/screenshots/session-browser.png)](assets/screenshots/session-browser.png)
+[![.NET WPF Session Browser with a session list and conversation preview](assets/screenshots/session-browser-en.png)](assets/screenshots/session-browser-en.png)
 
-右鍵 →「開啟會話瀏覽器」。可搜尋會話、預覽內容、複製 ID、備份、刪除至回收區及還原。勾選隱藏內部會話只會篩選清單，不會刪除資料。
+Choose **Open Session Browser** from the right-click menu. Search conversations, preview messages, copy IDs, back up, move sessions to Trash, and restore them. Hiding internal sessions only filters the list; it does not delete anything.
 
-介面語言即時跟隨主程式，更改語言不會改寫會話名稱或訊息。重複開啟會喚回同一個 WPF 視窗。備份／移至回收區／還原期間會阻止關閉瀏覽器及退出 EzMate；可先取消剩餘操作，等目前檔案安全處理完畢後退出。退出 EzMate 時會一併關閉瀏覽器。
+The interface immediately follows the main app's language. Changing languages does not rewrite conversation names or messages. Opening the browser again brings the same WPF window to the foreground. While a backup, move, or restore is running, closing the browser or exiting EzMate is blocked. You can cancel the remaining operations and exit once the current file has been handled safely. Exiting EzMate also closes Session Browser.
 
-預覽有大小及訊息數上限，完整內容可使用「開啟 JSONL」查看。
+Previews have size and message-count limits. Use **Open JSONL** to view the full record.
 
-### Goal 監控
+### Goal monitoring
 
-> **實驗功能：** Goal 監控尚未經開發者本人實際使用驗證，穩定性及相容性仍待確認。請自行評估是否啟用；建議先以非重要工作測試，並留意執行結果。
+> **Experimental feature:** The developer has not personally tested Goal monitoring in actual use. Stability and compatibility still need verification. Decide for yourself whether to enable it; start with non-critical work and monitor the results.
 
-1. 開啟「Goal 監控」，掃描本機對話。
-2. 勾選允許自動恢復的目標，再開始監控。
-3. 原生 Goal 處於 `usageLimited`，且執行工作的 App Server 確認額度已恢復時，程式會逐個背景接手。
+1. Open **Goal monitoring** and scan local conversations.
+2. Select the Goals you allow EzMate to resume, then start monitoring.
+3. When a native Goal is `usageLimited` and the App Server executing the work confirms quota is available, EzMate resumes selected work one at a time in the background.
 
-支援同一 Windows 帳戶下、CLI／Codex App／VS Code 來源的相容本機已保存對話。內部子會話、ephemeral 對話及遠端／WSL 工作目錄不在支援範圍；需要原客戶端專屬工具的工作可能無法接手。請勿同時在另一客戶端繼續已被接手的對話。
+Compatible saved local conversations from CLI, Codex App, and VS Code under the same Windows account are supported. Internal subagent sessions, ephemeral conversations, and remote/WSL working directories are outside the supported scope. Work requiring tools specific to its original client may not be resumable. Do not continue a conversation in another client while EzMate is handling it.
 
-需要命令、檔案修改或權限批准時，可在「查看／回覆請求」處理，程式不會自動批准。停止監控只停止接手新工作；要停止目前工作，請使用「暫停目前工作」。人工暫停的 Goal 不會被正常自動檢查重新啟動。
+Command, file-change, and permission requests can be handled through the request review controls. EzMate does not approve them automatically. Stopping monitoring only stops taking on new work; use **Pause current work** to pause the current Goal. Normal automatic checks do not resume manually paused Goals.
 
-### Server 代管
+### Server hosting
 
-[![Codex App Server 代管視窗，展示執行檔路徑、端口及管理操作](assets/screenshots/server-host.png)](assets/screenshots/server-host.png)
+[![Codex App Server host window with executable path, port, and management controls](assets/screenshots/server-host-en.png)](assets/screenshots/server-host-en.png)
 
-預設端點為 `ws://127.0.0.1:4500`，供本機相容 App Server 客戶端使用。Server 在背景運行，不額外開啟 console，並使用獨立工作資料夾。
+The default endpoint is `ws://127.0.0.1:4500`, for compatible clients on the same computer. The server runs in the background without an extra console window and uses a separate working folder.
 
-- 已有可正常握手的 Server 時直接重用；端口被其他服務佔用時顯示錯誤。
-- 只管理自身啟動的程序，退出時不停止重用的外部 Server。
-- 自身 Server 意外退出後，以 2、5、15、30、60 秒間隔重試，之後維持 60 秒。
-- 沿用 Codex 自己保存的登入認證，不需要在 EzMate 填寫 API Key。
+- Reuses an existing server that completes the protocol handshake. Reports an error if another service occupies the port.
+- Manages only processes it starts. Exiting EzMate leaves reused external servers running.
+- Restarts its own server after unexpected exits, retrying after 2, 5, 15, 30, and 60 seconds, then every 60 seconds.
+- Uses Codex's saved authentication. You do not need to enter an API key into EzMate.
 
-獨立工作資料夾用於避免繼承其他專案的上下文，**不代表啟用「不保存對話」**；是否建立 ephemeral thread 由連線客戶端決定。
+The separate working folder avoids inheriting another project's context. **It does not enable a “no conversation history” mode**; the connecting client determines whether to create an ephemeral thread.
 
-**實用搭配：把codex用作翻譯 可參考專案 [Saladict EzMate](https://github.com/lkamhk/saladict-ezmate-)。** 若使用其 Codex App Server 接入方式，可將連線位址設為 `ws://127.0.0.1:4500`，由 Codex EzMate 在背景代管 Server，毋須每次手動開啟終端。安裝及設定方式請參閱該專案的 README。
+**Suggested companion: [Saladict EzMate](https://github.com/lkamhk/saladict-ezmate-) for using Codex for translation.** If you use its Codex App Server integration, set the endpoint to `ws://127.0.0.1:4500` and let Codex EzMate host the server in the background, without opening a terminal each time. See that project's README for installation and configuration.
 
-### 程式更新
+### Application updates
 
-**目前發佈版本不啟用自動檢查、下載或安裝新版程式。** 請到 [GitHub Releases](https://github.com/lkamhk/CodexEzMate/releases) 手動下載新版。
+**Current releases do not automatically check for, download, or install newer application versions.** Download updates manually from [GitHub Releases](https://github.com/lkamhk/CodexEzMate/releases).
 
-更新前先正常結束 EzMate。安裝版可執行新版 Setup；portable 版請先保留原有設定及會話備份，再更換程式檔案。
+Exit EzMate normally before updating. For the installer edition, run the new Setup file. For the portable edition, preserve your settings and conversation backups before replacing application files.
 
-用量的定時更新及 Server 通知更新仍可使用，不受程式自動更新停用影響。
+Scheduled usage refresh and server-notification refresh remain available; disabling application updates does not affect them.
 
-## 從原始碼執行
+## Running from source
 
-需要 Windows x64、.NET 8 SDK，以及可還原 NuGet 套件的網絡環境。Session Browser 隨主程式一同編譯，毋須 Python、Nuitka 或 C++ 編譯工具。
+Requires Windows x64, the .NET 8 SDK, and network access to restore NuGet packages. Session Browser builds with the main application. Python, Nuitka, and C++ build tools are not required.
 
 ```powershell
 git clone https://github.com/lkamhk/CodexEzMate.git
@@ -127,23 +126,23 @@ cd CodexEzMate
 dotnet run --project src/CodexUsageAssistant.App/CodexUsageAssistant.App.csproj -c Debug
 ```
 
-上述指令會還原依賴、編譯並啟動 Debug 版本。重新編譯前請先結束舊 Debug 程式。只編譯、不啟動介面：
+This restores dependencies, builds, and starts the Debug version. Exit any running Debug instance before rebuilding. To build without launching:
 
 ```powershell
 dotnet build src/CodexUsageAssistant.App/CodexUsageAssistant.App.csproj -c Debug
 ```
 
-執行測試：
+Run tests:
 
 ```powershell
 dotnet test tests/CodexUsageAssistant.Tests/CodexUsageAssistant.Tests.csproj -c Debug
 ```
 
-## 參考項目
+## Reference projects
 
 - [CodexMeter](https://github.com/raycalrui/CodexMeter)
 - [CodexQuotaTray](https://github.com/SYD-Official/CodexQuotaTray)
 
-## 第三方資源
+## Third-party resources
 
-部分介面圖示使用 Microsoft Fluent UI System Icons，相關授權見 [Fluent UI LICENSE](src/CodexUsageAssistant.App/Assets/fluent/LICENSE.txt)。其他依賴的授權以各套件隨附文件為準。
+Some interface icons use Microsoft Fluent UI System Icons. See the [Fluent UI license](src/CodexUsageAssistant.App/Assets/fluent/LICENSE.txt). Other dependencies are subject to their respective licenses.

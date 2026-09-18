@@ -4,7 +4,7 @@
 
 # Codex EzMate
 
-[繁體中文](README.md) · **English**
+**English** · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md)
 
 A Windows companion for Codex: check remaining usage, manage local conversations, host App Server in the background, and resume selected Goals when quota becomes available again.
 

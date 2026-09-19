@@ -8,13 +8,13 @@
 
 A Windows companion for Codex: check remaining usage, manage local conversations, and host App Server in the background.
 
-**Current source version: 1.21.0** · Windows x64 · .NET 8 / WPF · Traditional Chinese / Simplified Chinese / English
+**Current source version: 1.21.3** · Windows x64 · .NET 8 / WPF · Traditional Chinese / Simplified Chinese / English
 
 [Download](https://github.com/lkamhk/CodexEzMate/releases) · [Report an issue](https://github.com/lkamhk/CodexEzMate/issues)
 
 **Current releases require manual updates. Automatic application updates are not enabled.**
 
-> **Do not use Goal monitoring: it is still under development.** Keep it disabled. Automatic resumption in the original Codex Desktop conversation is not yet reliable. This warning applies specifically to Goal monitoring.
+> **Goal monitoring is available for experimental testing — feedback is welcome!** It sends an automatic continuation message to the original conversation. Processing that message and continuing the Goal consume tokens and Codex usage quota. Start with non-critical work; recovery after real quota exhaustion still needs live verification.
 
 This is a third-party project, not an official OpenAI product.
 
@@ -35,7 +35,7 @@ These screenshots show the English interface with example usage, conversations, 
 | Reset / Token / Credit | Hover to reveal navigation arrows. View reset expiry dates, daily token bars, and credit information. |
 | Use a reset | Consume one reset after confirmation, prioritizing the earliest-expiring valid item in the returned details, then refresh usage. |
 | Session Browser | Search and preview local conversations, copy IDs, back up, move to Trash, and restore. Internal sessions can be hidden. |
-| Goal monitoring | **Under development — do not use.** Automatic Goal resumption is not yet reliable. |
+| Goal monitoring | **Experimental — available for testing.** Resume selected usage-limited Goals in the original Codex Desktop conversation. Sends a continuation message and consumes tokens and usage quota. |
 | Server hosting | Start or reuse a local Codex App Server, with sign-in, connection status, restart controls, and recovery after unexpected exits. |
 | Global shortcuts | Assign shortcuts to open Session Browser, Goal monitoring, Server host, usage details, settings, and other windows. |
 | Usage refresh and preferences | Scheduled and event-triggered usage refresh, proxy settings, and three interface languages. Refreshing usage is separate from updating the application. |
@@ -85,13 +85,20 @@ Previews have size and message-count limits. Use **Open JSONL** to view the full
 
 ### Goal monitoring
 
-> **Under development — do not use.** Keep Goal monitoring disabled until a later release explicitly announces that it is ready.
+> **Available for experimental testing — feedback is welcome!** The original Codex Desktop can remain open or minimized while EzMate requests continuation in the same conversation.
 
-Automatic resumption in the original Codex Desktop conversation is not yet reliable, and progress visibility still needs work. CLI and VS Code compatibility also remains unverified. Do not rely on this feature to continue work after a quota reset or close Codex Desktop to force a takeover.
+**Token and quota usage:** This feature sends an automatic continuation message to the original conversation. Processing the message and subsequent Goal execution consume tokens and Codex usage quota. Enable it only for conversations you want to continue.
 
-If already enabled, select **Stop monitoring**, disable monitoring at startup, and save. Stopping monitoring prevents new work from being taken on; if EzMate is currently executing a Goal, use **Pause current work** first.
+1. Keep Codex Desktop open, then open **Goal monitoring** from the tray menu and scan local conversations.
+2. Select the conversations you want to monitor and choose **Start monitoring**. Automatic recovery targets only selected Goals stopped by quota exhaustion, after App Server reports quota is available.
+3. To try it with a non-critical, manually paused Desktop Goal, select it and choose **Continue selected paused Goal**.
+4. Check progress and respond to approval or input requests in the original Desktop conversation. EzMate distinguishes queued messages from confirmed execution and avoids automatically resending uncertain requests after disconnection or restart.
 
-This warning applies to Goal monitoring; it does not ask you to disable usage display, Session Browser, or Server hosting.
+Use **Stop monitoring** to stop taking on new recoveries. **Cancel recovery / pause continuation** handles an outstanding EzMate recovery and pauses further Goal continuation; stop an already running turn in the original Desktop. Exiting EzMate leaves Desktop work running.
+
+**Tested:** continuation in the original Desktop, automatic continuation across turns, preservation of existing Goal usage, and operation while minimized with user-confirmed absence of foreground interference. **Still awaiting live verification:** recovery after actual quota exhaustion, including normal resets, manually redeemed resets, and early quota restoration. CLI and VS Code compatibility is not yet verified. Avoid editing or resuming the same Goal simultaneously in multiple clients.
+
+Please [report feedback or problems](https://github.com/lkamhk/CodexEzMate/issues) with your EzMate and Codex versions, Goal status, steps to reproduce, and expected versus actual behavior. Remove account details, credentials, and private conversation content before sharing logs or screenshots.
 
 ### Server hosting
 

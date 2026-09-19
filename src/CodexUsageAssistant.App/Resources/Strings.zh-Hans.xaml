@@ -2,10 +2,10 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
   <sys:String x:Key="HotkeySettings">快捷键设置</sys:String>
-  <sys:String x:Key="SettingsTitle">Codex EzMate v1.21.0 设置</sys:String>
-  <sys:String x:Key="LoginTitle">Codex EzMate v1.21.0 — 登录 ChatGPT</sys:String>
-  <sys:String x:Key="PickerTitle">Codex EzMate v1.21.0 — 抓取 Resume 座标</sys:String>
-  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.21.0 — 用量详情</sys:String>
+  <sys:String x:Key="SettingsTitle">Codex EzMate v1.21.3 设置</sys:String>
+  <sys:String x:Key="LoginTitle">Codex EzMate v1.21.3 — 登录 ChatGPT</sys:String>
+  <sys:String x:Key="PickerTitle">Codex EzMate v1.21.3 — 抓取 Resume 座标</sys:String>
+  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.21.3 — 用量详情</sys:String>
   <sys:String x:Key="UsageOverview">用量概览</sys:String>
   <sys:String x:Key="UsageSourceTab">资料来源</sys:String>
   <sys:String x:Key="UsageSourceTitle">用量资料读取方式</sys:String>
@@ -101,14 +101,16 @@
   <sys:String x:Key="HostExecutable">codex.exe 完整路径（必填）</sys:String>
   <sys:String x:Key="HostDetect">自动检测</sys:String>
   <sys:String x:Key="TrayUsageIcon">系统托盘图标显示剩余百分比（5 小时优先，否则每周）</sys:String>
-  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.21.0 — Server 代管</sys:String>
-  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.21.0 — Goal 监控</sys:String>
+  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.21.3 — Server 代管</sys:String>
+  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.21.3 — Goal 监控</sys:String>
   <sys:String x:Key="CloseWindow">关闭</sys:String>
   <sys:String x:Key="AutoCheckUpdates">启动时自动检查更新</sys:String>
-  <sys:String x:Key="GoalBackgroundHelp">后台接手已勾选且因额度停止的 Goal；同时只执行一个。接手期间请勿在其他客户端同时继续此对话。</sys:String>
+  <sys:String x:Key="GoalBackgroundHelp">开发测试功能：额度可用时，恢复已勾选且因额度停止的原 Desktop Goal，并加入一条继续消息。真正额度耗尽后的恢复仍待实测。</sys:String>
+  <sys:String x:Key="GoalOriginalClientHelp">请保持 Codex Desktop 开启，可以最小化。进度与批准在原对话处理；退出 EzMate 不会停止原 Desktop 工作。取消恢复不会中断已开始的回合。</sys:String>
   <sys:String x:Key="GoalSource">来源</sys:String>
   <sys:String x:Key="GoalCompatibility">兼容性</sys:String>
-  <sys:String x:Key="PauseBackgroundGoal">暂停当前工作</sys:String>
+  <sys:String x:Key="GoalLastResultDetails">所选会话：最后结果及处理方法</sys:String>
+  <sys:String x:Key="PauseBackgroundGoal">取消恢复／暂停继续</sys:String>
   <sys:String x:Key="ContinuePausedGoal">继续所选已暂停 Goal</sys:String>
   <sys:String x:Key="ReviewGoalRequest">查看／回复请求</sys:String>
 </ResourceDictionary>

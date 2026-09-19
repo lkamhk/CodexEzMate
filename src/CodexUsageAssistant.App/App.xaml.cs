@@ -37,7 +37,7 @@ public partial class App : System.Windows.Application
         collection.AddSingleton<IUsageCacheService, UsageCacheService>();
         collection.AddSingleton<IAutoResumeSettingsService, AutoResumeSettingsService>();
         collection.AddSingleton<IConversationDiscoveryService, ConversationDiscoveryService>();
-        collection.AddSingleton<IGoalResumeService, GoalResumeService>();
+        collection.AddSingleton<IGoalResumeService, DesktopGoalResumeService>();
         collection.AddSingleton<FloatingBallViewModel>();
         collection.AddSingleton<FloatingBallWindow>();
         collection.AddSingleton<TrayDetailsWindow>();
@@ -52,7 +52,7 @@ public partial class App : System.Windows.Application
         _host = _services.GetRequiredService<CodexAppServerHost>();
         await _host.InitializeAsync();
         _goals = _services.GetRequiredService<IGoalResumeService>();
-        _host.BeforeStopAsync = token => _goals.PauseAsync(token);
+        // Desktop owns execution; stopping EzMate's transport must not pause Desktop work.
         var window = _services.GetRequiredService<FloatingBallWindow>();
         var detailsWindow = _services.GetRequiredService<TrayDetailsWindow>();
         var viewModel = _services.GetRequiredService<FloatingBallViewModel>();
@@ -100,7 +100,7 @@ public partial class App : System.Windows.Application
         ApplyDisplayMode(window, _trayIcon, position.DisplayMode);
         _trayIcon.SetLanguage(position.Language);
         await viewModel.InitializeAsync();
-        if (_goals is GoalResumeService recovery) _ = recovery.InitializeAsync(CancellationToken.None);
+        if (_goals is DesktopGoalResumeService recovery) _ = recovery.InitializeAsync(CancellationToken.None);
         AppUpdateService.AcknowledgeUpdateStartup(e.Args);
         if (AppUpdateService.IsConfigured) _ = CheckUpdatesAtStartupAsync(viewModel);
     }
@@ -150,22 +150,17 @@ public partial class App : System.Windows.Application
         if (_trayIcon?.CanCloseSessionBrowser() == false) return;
         _trayIcon?.PrepareSessionBrowserForExit(true);
         _shuttingDown = true;
-        if (_goals is GoalResumeService background) background.PrepareToExit(true);
+        if (_goals is DesktopGoalResumeService background) background.PrepareToExit(true);
         try
         {
-            if (_goals is not null)
-            {
-                using var pauseTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-                if (!await _goals.PauseAsync(pauseTimeout.Token)) throw new InvalidOperationException("Goal pause is unconfirmed.");
-            }
             if (_host is not null) await _host.StopAsync();
         }
         catch (Exception ex) when (CodexAppServerHost.IsExpected(ex))
         {
             _shuttingDown = false;
             _trayIcon?.PrepareSessionBrowserForExit(false);
-            if (_goals is GoalResumeService pausedWorker) pausedWorker.PrepareToExit(false);
-            System.Windows.MessageBox.Show(LocalizationService.Pick("未能確認背景 Goal 已暫停。程式保持開啟，請在 Goal 視窗重新檢查後再退出。", "Background Goal pause is unconfirmed. The app remains open; check the Goal window before exiting."));
+            if (_goals is DesktopGoalResumeService pausedWorker) pausedWorker.PrepareToExit(false);
+            System.Windows.MessageBox.Show(LocalizationService.Pick("未能停止代管 Server，請檢查後再退出。", "Could not stop the hosted Server; check it before exiting."));
             return;
         }
         _updateCheck.Cancel();
@@ -176,15 +171,7 @@ public partial class App : System.Windows.Application
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
     {
         if (_trayIcon?.CanCloseSessionBrowser() == false) { e.Cancel = true; return; }
-        if (_goals?.HasActiveWork == true)
-        {
-            try
-            {
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-                if (!_goals.PauseAsync(timeout.Token).GetAwaiter().GetResult()) { e.Cancel = true; return; }
-            }
-            catch { e.Cancel = true; return; }
-        }
+        if (_goals is DesktopGoalResumeService background) background.PrepareToExit(true);
         _host?.StopOwnedImmediately();
         base.OnSessionEnding(e);
     }

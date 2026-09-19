@@ -91,6 +91,7 @@ public partial class FloatingBallViewModel : ObservableObject
             if (fresh.Status != UsageStatus.Available) throw new InvalidOperationException("Cannot read current reset credits.");
             var creditId = ResetRedemptionService.SelectEarliestCredit(fresh, DateTimeOffset.Now);
             var outcome = await new ResetRedemptionService().RedeemAsync(settings?.CodexExecutablePath, CancellationToken.None, creditId);
+            if (outcome is "reset" or "alreadyRedeemed") _autoResumeScheduler?.RequestCheck();
             var resultMessage = outcome switch
             {
                 "reset" => L("已使用一次 reset。", "One reset was used."),
@@ -101,7 +102,7 @@ public partial class FloatingBallViewModel : ObservableObject
             var updated = await new AppServerUsageService().ReadAsync(settings?.CodexExecutablePath, CancellationToken.None);
             if (updated.Status == UsageStatus.Available)
             {
-                ApplyUsage(updated);
+                ApplyFreshUsage(updated);
                 await _cache.SaveAsync(updated, CancellationToken.None);
             }
             else resultMessage += L(" 請重新整理以確認最新額度。", " Refresh to check the latest limits.");
@@ -239,7 +240,7 @@ public partial class FloatingBallViewModel : ObservableObject
             System.Windows.MessageBox.Show(StatusMessage, L("登入／取得額度", "Sign in / Get usage"));
             return;
         }
-        ApplyUsage(usage);
+        ApplyFreshUsage(usage);
         if (!AutoResumeScheduler.HasDisplayableUsage(usage))
         {
             StatusMessage = L("未更新：找不到可用額度資料", "Not updated: no available usage data found");
@@ -260,7 +261,7 @@ public partial class FloatingBallViewModel : ObservableObject
                 : $"{L("未更新", "Not updated")}：{usage?.ErrorMessage ?? L("背景讀取失敗", "Background read failed")}";
             return;
         }
-        ApplyUsage(usage);
+        ApplyFreshUsage(usage);
         if (!AutoResumeScheduler.HasDisplayableUsage(usage))
         {
             StatusMessage = L("未更新：找不到可用額度資料", "Not updated: no available usage data found");
@@ -318,6 +319,14 @@ public partial class FloatingBallViewModel : ObservableObject
         settings.AutoRefreshIntervalMinutes is int minutes && minutes > 0
             ? TimeSpan.FromMinutes(minutes)
             : null;
+
+    internal void ApplyFreshUsage(UsageData usage)
+    {
+        var recovered = GoalProtocol.UsageAllowsResume(usage) && (_lastUsage is null || !GoalProtocol.UsageAllowsResume(_lastUsage));
+        ApplyUsage(usage);
+        // Wake the monitor, which independently rechecks its own App Server account.
+        if (recovered) _autoResumeScheduler?.RequestCheck();
+    }
 
     private void ApplyUsage(UsageData usage)
     {

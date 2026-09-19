@@ -14,7 +14,7 @@ public partial class GoalApprovalWindow : Window
     public GoalApprovalWindow(IGoalResumeService goals, GoalPendingRequest request)
     {
         _goals = goals; _request = request; InitializeComponent();
-        Title = "Codex EzMate v1.21.0 — " + L("Goal 待處理請求", "Goal request");
+        Title = "Codex EzMate v1.21.3 — " + L("Goal 待處理請求", "Goal request");
         ContextText.Text = L("請確認本次操作；關閉此視窗會保留等待狀態。", "Review this operation. Closing this window leaves the request pending.") + "\n" + request.ThreadId;
         DetailsText.Text = request.Summary;
         if (request.Method == "item/tool/requestUserInput")

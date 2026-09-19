@@ -166,6 +166,7 @@ public sealed class GoalResumeService : IGoalResumeService, IAsyncDisposable, ID
             goal = GoalProtocol.Property(await rpc.RequestAsync("thread/goal/get", new { threadId = target.ThreadId }, token).ConfigureAwait(false), "goal");
             if (!GoalProtocol.CanResumeGoal(GoalProtocol.Text(goal, "status"), manual))
             { ReleaseLease(); return Result(target, ConversationResumeStatus.NoActionNeeded, L("Goal 狀態已變更，沒有操作。", "The Goal state changed; no action was taken.")); }
+            target.Compatibility = L("已取得背景接手權限", "Background takeover acquired");
             lock (_sync)
             {
                 if (_exiting) { ReleaseLease(); return Result(target, ConversationResumeStatus.NoActionNeeded, L("程式正在退出。", "The app is exiting.")); }
@@ -191,8 +192,23 @@ public sealed class GoalResumeService : IGoalResumeService, IAsyncDisposable, ID
         catch (Exception ex) when (CodexAppServerHost.IsExpected(ex))
         {
             if (!HasActiveWork) ReleaseLease();
-            var status = HasActiveWork ? ConversationResumeStatus.PendingConfirmation : ex is GoalLeaseBusyException ? ConversationResumeStatus.Busy : ex is HostRpcException ? ConversationResumeStatus.Unsupported : ConversationResumeStatus.Failed;
+            var rpcError = ex as HostRpcException;
+            var writerBusy = rpcError is { Failure: HostRpcFailure.ActiveWriter, Method: "thread/resume" };
+            var status = HasActiveWork ? ConversationResumeStatus.PendingConfirmation : ex is GoalLeaseBusyException || writerBusy ? ConversationResumeStatus.Busy
+                : rpcError?.Code == -32601 ? ConversationResumeStatus.Unsupported : ConversationResumeStatus.Failed;
             var message = L("背景接手未能確認；請檢查版本、工作目錄及對話是否由其他客戶端使用。", "Background takeover is unconfirmed; check version, working directory and other clients.");
+            if (writerBusy)
+            {
+                target.Compatibility = L("原客戶端持有寫入權", "Writer held by another client");
+                message = L("另一個 Codex 客戶端仍持有此會話的寫入權，暫時無法接手。請在原客戶端關閉此對話；若仍被佔用，正常退出原客戶端。保持監控會自動重試，也可按「立即檢查」。",
+                    "Another Codex client still holds this conversation's writer. Close the conversation in its original client; if it remains in use, exit that client normally. Monitoring will retry, or select Check now.");
+            }
+            else if (rpcError is not null)
+            {
+                target.Compatibility = L("App Server 請求未完成", "App Server request failed");
+                message = L($"App Server 未接受 {rpcError.Method ?? "RPC"}（錯誤碼 {rpcError.Code}）。請檢查 Codex 版本及原客戶端的對話狀態。",
+                    $"App Server rejected {rpcError.Method ?? "RPC"} (code {rpcError.Code}). Check the Codex version and conversation state in the original client.");
+            }
             if (HasActiveWork) Publish(status, message);
             return Result(target, status, message);
         }

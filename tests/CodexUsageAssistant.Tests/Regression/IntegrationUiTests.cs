@@ -80,7 +80,7 @@ public sealed class IntegrationUiTests
                     if (manager is GoalMonitorWindow)
                     {
                         var grid = (System.Windows.Controls.DataGrid)manager.FindName("ConversationsGrid");
-                        grid.ItemsSource = new[] { new CodexUsageAssistant.Models.ConversationTarget { ProjectName = "Sample project", Title = "Sample conversation", Source = "cli", GoalStatus = "usageLimited", Compatibility = "Local Goal" } };
+                        grid.ItemsSource = new[] { new CodexUsageAssistant.Models.ConversationTarget { ProjectName = "Sample project", Title = "Sample conversation", Source = "vscode", GoalStatus = "active", Compatibility = "Original Desktop" } };
                         var keys = new[] { "MonitorColumn", "ProjectColumn", "ConversationColumn", "IdentityColumn", "LastResultColumn", "GoalSource", "Goal", "GoalCompatibility" };
                         for (var index = 0; index < keys.Length; index++) grid.Columns[index].Header = keys[index] == "Goal" ? "Goal" : manager.FindResource(keys[index]);
                     }
@@ -98,7 +98,20 @@ public sealed class IntegrationUiTests
                         Assert.True(((FrameworkElement)manager.FindName("HostPathTextBox")).ActualWidth > 0);
                         Assert.DoesNotContain("Saladict", manager.FindResource("HostHelp").ToString()!);
                     }
-                    else Assert.True(((FrameworkElement)manager.FindName("ConversationsGrid")).ActualHeight > 0);
+                    else
+                    {
+                        var grid = (System.Windows.Controls.DataGrid)manager.FindName("ConversationsGrid");
+                        Assert.True(grid.ActualHeight > 0);
+                        grid.SelectedItem = grid.Items[0];
+                        var target = (CodexUsageAssistant.Models.ConversationTarget)grid.SelectedItem;
+                        target.LastStatus = CodexUsageAssistant.Models.ConversationResumeStatus.Queued;
+                        target.LastMessage = language == "en" ? "Recovery message queued; waiting for the original Desktop. Keep Desktop open."
+                            : language == "zh-Hans" ? "已排入恢复消息，等待原 Desktop 执行；请保持 Desktop 开启。"
+                            : "已排入恢復訊息，等待原 Desktop 執行；請保持 Desktop 開啟。";
+                        panel.Measure(new Size(width, height)); panel.Arrange(new Rect(0, 0, width, height));
+                        panel.UpdateLayout();
+                        Assert.Equal(target.LastMessage, ((System.Windows.Controls.TextBox)manager.FindName("SelectedGoalResultText")).Text);
+                    }
                     if (!string.IsNullOrWhiteSpace(output))
                     {
                         var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(panel);

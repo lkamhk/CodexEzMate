@@ -30,7 +30,7 @@ public sealed class ConversationDiscoveryService(ISettingsService settings) : IC
                     target.GoalStatus = GoalProtocol.Text(GoalProtocol.Property(response, "goal"), "status") ?? "none";
                     target.Compatibility = target.GoalStatus == "none" ? LocalizationService.Pick("沒有 Goal", "No Goal")
                         : string.IsNullOrWhiteSpace(target.Cwd) || !Directory.Exists(target.Cwd) ? LocalizationService.Pick("工作目錄不存在", "Working directory unavailable")
-                        : LocalizationService.Pick("可檢查背景接手", "Background takeover can be checked");
+                        : LocalizationService.Pick("尚待檢查 Desktop 恢復相容性", "Desktop recovery compatibility not checked");
                 }
                 catch (InvalidOperationException) { target.GoalStatus = "unknown"; target.Compatibility = LocalizationService.Pick("Goal API 未提供", "Goal API unavailable"); }
             }

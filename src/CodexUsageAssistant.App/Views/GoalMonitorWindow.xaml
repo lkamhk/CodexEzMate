@@ -32,6 +32,9 @@
           <DataGrid x:Name="ConversationsGrid" Grid.Row="3" Margin="0,10,0,10"
                     AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                     HeadersVisibility="Column" SelectionMode="Single">
+            <DataGrid.RowStyle>
+              <Style TargetType="DataGridRow"><Setter Property="ToolTip" Value="{Binding LastMessage}" /></Style>
+            </DataGrid.RowStyle>
             <DataGrid.Columns>
               <DataGridCheckBoxColumn Header="{DynamicResource MonitorColumn}" Binding="{Binding Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="65" />
               <DataGridTextColumn Header="{DynamicResource ProjectColumn}" Binding="{Binding ProjectName}" IsReadOnly="True" Width="150" />
@@ -47,9 +50,12 @@
             <WrapPanel Margin="0,0,0,8">
               <Button x:Name="PauseGoalButton" Content="{DynamicResource PauseBackgroundGoal}" Click="OnPauseGoal" Padding="10,6"/>
               <Button Content="{DynamicResource ContinuePausedGoal}" Click="OnContinueGoal" Padding="10,6" Margin="8,0,0,0"/>
-              <Button Content="{DynamicResource ReviewGoalRequest}" Click="OnReviewRequest" Padding="10,6" Margin="8,0,0,0"/>
             </WrapPanel>
-            <ListBox x:Name="PendingRequestsList" Height="70" DisplayMemberPath="DisplayName"/>
+            <TextBlock Text="{DynamicResource GoalLastResultDetails}" Foreground="#718690" Margin="0,0,0,4"/>
+            <TextBox x:Name="SelectedGoalResultText" IsReadOnly="True" TextWrapping="Wrap" MinHeight="42" MaxHeight="100"
+                     VerticalScrollBarVisibility="Auto" Padding="6" Margin="0,0,0,8"
+                     Text="{Binding SelectedItem.LastMessage, ElementName=ConversationsGrid, Mode=OneWay}"/>
+            <TextBlock Text="{DynamicResource GoalOriginalClientHelp}" TextWrapping="Wrap" Foreground="#718690"/>
           </StackPanel>
           <TextBlock x:Name="AutoResumeStatusText" Grid.Row="5" Foreground="#718690" TextWrapping="Wrap" Margin="0,8,0,0" />
         </Grid>

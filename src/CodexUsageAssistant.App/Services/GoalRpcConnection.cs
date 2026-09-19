@@ -37,7 +37,7 @@ internal sealed class GoalRpcConnection : IGoalRpcConnection
             connection._reader = connection.ReadAsync();
             await connection.RequestAsync("initialize", new
             {
-                clientInfo = new { name = "codex_ezmate_goals", title = "Codex EzMate", version = "1.21.0" },
+                clientInfo = new { name = "codex_ezmate_goals", title = "Codex EzMate", version = "1.21.3" },
                 capabilities = new { experimentalApi = true }
             }, timeout.Token).ConfigureAwait(false);
             await connection.SendAsync(new { method = "initialized", @params = new { } }, timeout.Token).ConfigureAwait(false);
@@ -58,6 +58,7 @@ internal sealed class GoalRpcConnection : IGoalRpcConnection
             await SendAsync(new { id, method, @params = parameters }, timeout.Token).ConfigureAwait(false);
             return await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
         }
+        catch (HostRpcException ex) { throw ex.ForMethod(method); }
         finally { _requests.TryRemove(id, out _); }
     }
 
@@ -96,7 +97,7 @@ internal sealed class GoalRpcConnection : IGoalRpcConnection
                     if (root.TryGetProperty("id", out var id) && id.TryGetInt32(out var number) && _requests.TryGetValue(number, out var request))
                     {
                         if (root.TryGetProperty("error", out var error))
-                            request.TrySetException(new HostRpcException(error.TryGetProperty("code", out var code) ? code.GetInt32() : -1));
+                            request.TrySetException(HostRpcException.FromError(error));
                         else if (root.TryGetProperty("result", out var result)) request.TrySetResult(result.Clone());
                     }
                 }

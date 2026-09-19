@@ -4,9 +4,24 @@ using System.Text.Json;
 
 namespace CodexUsageAssistant.Services;
 
-internal sealed class HostRpcException(int code) : Exception("App Server RPC failed.")
+internal enum HostRpcFailure { Unknown, ActiveWriter }
+
+internal sealed class HostRpcException(int code, HostRpcFailure failure = HostRpcFailure.Unknown, string? method = null) : Exception("App Server RPC failed.")
 {
     internal int Code { get; } = code;
+    internal HostRpcFailure Failure { get; } = failure;
+    internal string? Method { get; } = method;
+    internal HostRpcException ForMethod(string value) => new(Code, Failure, value);
+
+    internal static HostRpcException FromError(JsonElement error, string? method = null)
+    {
+        var code = error.TryGetProperty("code", out var item) && item.TryGetInt32(out var number) ? number : -1;
+        var message = error.TryGetProperty("message", out var text) && text.ValueKind == JsonValueKind.String ? text.GetString() ?? "" : "";
+        // Classify a known server condition without retaining arbitrary error text or credentials.
+        var failure = message.StartsWith("thread ", StringComparison.OrdinalIgnoreCase) && message.Contains("already has an active writer", StringComparison.OrdinalIgnoreCase)
+            ? HostRpcFailure.ActiveWriter : HostRpcFailure.Unknown;
+        return new(code, failure, method);
+    }
 }
 
 internal sealed class HostWebSocketClient : IAsyncDisposable
@@ -26,7 +41,7 @@ internal sealed class HostWebSocketClient : IAsyncDisposable
             await client._socket.ConnectAsync(new Uri($"ws://127.0.0.1:{port}"), token);
             await client.RequestAsync("initialize", new
             {
-                clientInfo = new { name = "codex_usage_assistant_host", title = "Codex EzMate", version = "1.21.0" }
+                clientInfo = new { name = "codex_usage_assistant_host", title = "Codex EzMate", version = "1.21.3" }
             }, token);
             await client.SendAsync(new { method = "initialized", @params = new { } }, token);
             return client;
@@ -53,7 +68,7 @@ internal sealed class HostWebSocketClient : IAsyncDisposable
             }
             if (!responseId.TryGetInt32(out var value) || value != id) continue;
             if (root.TryGetProperty("error", out var error))
-                throw new HostRpcException(error.TryGetProperty("code", out var code) && code.TryGetInt32(out var number) ? number : -1);
+                throw HostRpcException.FromError(error, method);
             return root.GetProperty("result").Clone();
         }
     }

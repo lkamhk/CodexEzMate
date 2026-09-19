@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>CodexEzMate.Updater</AssemblyName>
-    <Version>1.21.0</Version>
+    <Version>1.21.3</Version>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="..\CodexEzMate.UpdateCore\CodexEzMate.UpdateCore.csproj" /></ItemGroup>
 </Project>

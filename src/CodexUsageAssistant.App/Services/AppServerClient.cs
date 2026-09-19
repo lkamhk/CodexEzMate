@@ -38,7 +38,7 @@ internal sealed class AppServerClient : IAsyncDisposable
             process.BeginErrorReadLine();
             await client.RequestAsync("initialize", new
             {
-                clientInfo = new { name = "codex_usage_assistant", title = "Codex EzMate", version = "1.21.0" },
+                clientInfo = new { name = "codex_usage_assistant", title = "Codex EzMate", version = "1.21.3" },
                 capabilities = new { experimentalApi = true }
             }, token);
             await client.SendAsync(new { method = "initialized", @params = new { } }, token);

@@ -13,7 +13,7 @@
     <Title>Codex EzMate</Title>
     <Description>Codex EzMate desktop usage and App Server companion</Description>
     <RootNamespace>CodexUsageAssistant</RootNamespace>
-    <Version>1.21.0</Version>
+    <Version>1.21.3</Version>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>

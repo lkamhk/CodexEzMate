@@ -23,15 +23,18 @@ public enum ConversationResumeStatus
     Paused,
     Completed,
     Unsupported,
-    Busy
+    Busy,
+    Queued
 }
 
-public sealed class ConversationTarget
+public sealed class ConversationTarget : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
 {
     public string Source { get; set; } = "unknown";
     public string? Cwd { get; set; }
-    public string? GoalStatus { get; set; }
-    public string? Compatibility { get; set; }
+    private string? _goalStatus;
+    public string? GoalStatus { get => _goalStatus; set => SetProperty(ref _goalStatus, value); }
+    private string? _compatibility;
+    public string? Compatibility { get => _compatibility; set => SetProperty(ref _compatibility, value); }
     public string? LastTurnId { get; set; }
     public DateTimeOffset? NextResumeAt { get; set; }
     public string? ThreadId { get; set; }
@@ -39,8 +42,10 @@ public sealed class ConversationTarget
     public string Title { get; set; } = string.Empty;
     public bool Enabled { get; set; }
     public ConversationIdentityStatus IdentityStatus { get; set; } = ConversationIdentityStatus.Available;
-    public ConversationResumeStatus LastStatus { get; set; }
-    public string? LastMessage { get; set; }
+    private ConversationResumeStatus _lastStatus;
+    public ConversationResumeStatus LastStatus { get => _lastStatus; set => SetProperty(ref _lastStatus, value); }
+    private string? _lastMessage;
+    public string? LastMessage { get => _lastMessage; set => SetProperty(ref _lastMessage, value); }
     public DateTimeOffset? LastAttemptAt { get; set; }
 
     public string Key => string.IsNullOrWhiteSpace(ThreadId) ? $"{ProjectName}\u001f{Title}" : $"thread:{ThreadId}";

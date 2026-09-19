@@ -222,7 +222,7 @@ public sealed class JsonSettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public void AutoResumeScheduler_BothLimitsExhausted_UsesLaterResetPlusSafetyMinute()
+    public void AutoResumeScheduler_BothLimitsExhausted_StillPollsBeforeScheduledReset()
     {
         var now = new DateTimeOffset(2026, 7, 12, 7, 0, 0, TimeSpan.FromHours(8));
         var usage = new UsageData
@@ -232,7 +232,7 @@ public sealed class JsonSettingsServiceTests : IDisposable
             FiveHourResetAt = now.AddHours(2),
             WeeklyResetAt = now.AddHours(5)
         };
-        Assert.Equal(now.AddHours(5).AddMinutes(1), AutoResumeScheduler.CalculateNextCheck(usage, now));
+        Assert.Equal(now.AddMinutes(5), AutoResumeScheduler.CalculateNextCheck(usage, now));
     }
 
     [Fact]

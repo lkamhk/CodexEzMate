@@ -27,6 +27,8 @@ public sealed class BackgroundGoalTests(ITestOutputHelper output)
         public string GoalStatus = "usageLimited";
         public string ThreadStatus = "idle";
         public string Source = "cli";
+        public string HistoryMode = "legacy";
+        public HostRpcException? ResumeError;
         public bool Allowed = true;
         public bool StartEvents = true;
         public List<(string Method, JsonElement Parameters)> Calls = [];
@@ -37,13 +39,14 @@ public sealed class BackgroundGoalTests(ITestOutputHelper output)
         public JsonElement Request(string method, object? parameters)
         {
             Calls.Add((method, Json(parameters!)));
+            if (method == "thread/resume" && ResumeError is not null) throw ResumeError;
             switch (method)
             {
                 case "account/rateLimits/read": return Json(new { ordinaryUsageAllowed = Allowed, rateLimits = new { planType = "prolite", secondary = new { usedPercent = 4, windowDurationMins = 10080 } } });
                 case "account/usage/read": return Json(new { });
                 case "thread/goal/get": return Json(new { goal = Goal });
                 case "thread/read":
-                case "thread/resume": return Json(new { thread = new { id = Id, cwd, source = Source, ephemeral = false, status = new { type = ThreadStatus } } });
+                case "thread/resume": return Json(new { thread = new { id = Id, cwd, source = Source, ephemeral = false, historyMode = HistoryMode, status = new { type = ThreadStatus } } });
                 case "thread/turns/list": return Json(new { data = new[] { new { id = "turn-1", status = ThreadStatus == "active" ? "inProgress" : "completed" } } });
                 case "thread/goal/set":
                     GoalStatus = Calls[^1].Parameters.GetProperty("status").GetString()!;
@@ -368,15 +371,19 @@ public sealed class BackgroundGoalTests(ITestOutputHelper output)
     {
         public UsageData Usage = new() { Status = UsageStatus.Available, DataSource = "App Server", OrdinaryUsageAllowed = true, WeeklyRemainingPercent = 95 };
         public List<string> Resumed = [];
+        public int UsageReads;
+        public TaskCompletionSource<bool> ResumeObserved = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool HasActiveWork { get; set; }
         public GoalExecutionState State => new(null, null, ConversationResumeStatus.Unknown, "");
         public IReadOnlyList<GoalPendingRequest> PendingRequests => [];
         public event Action? Changed { add { } remove { } }
-        public event Action? UsageChanged { add { } remove { } }
-        public Task<UsageData> ReadUsageAsync(CancellationToken token) => Task.FromResult(Usage);
+        public event Action? UsageChanged;
+        public void SignalQuotaChange() => UsageChanged?.Invoke();
+        public Task<UsageData> ReadUsageAsync(CancellationToken token) { Interlocked.Increment(ref UsageReads); return Task.FromResult(Usage); }
         public Task<ConversationResumeResult> ResumeAsync(ConversationTarget target, CancellationToken token)
         {
             Resumed.Add(target.ThreadId!); HasActiveWork = true;
+            ResumeObserved.TrySetResult(true);
             return Task.FromResult(new ConversationResumeResult(target.ProjectName, target.Title, ConversationResumeStatus.Resumed, "test", DateTimeOffset.Now));
         }
         public Task<ConversationResumeResult> ContinuePausedAsync(ConversationTarget target, CancellationToken token) => ResumeAsync(target, token);
@@ -415,5 +422,147 @@ public sealed class BackgroundGoalTests(ITestOutputHelper output)
         await scheduler.StopAsync(CancellationToken.None);
         Assert.True(goals.HasActiveWork);
         Assert.False(settings.Value.MonitorEnabled);
+    }
+
+    [Fact]
+    public void Scheduler_ChecksNearbyResetButCapsDistantOrMissingResetAtFiveMinutes()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var usage = new UsageData { WeeklyRemainingPercent = 0, WeeklyResetAt = now.AddDays(6) };
+        Assert.Equal(now.AddMinutes(5), AutoResumeScheduler.CalculateNextCheck(usage, now));
+        usage.WeeklyResetAt = now.AddSeconds(30);
+        Assert.Equal(now.AddSeconds(90), AutoResumeScheduler.CalculateNextCheck(usage, now));
+        usage.WeeklyResetAt = now.AddDays(-1);
+        Assert.Equal(now.AddMinutes(5), AutoResumeScheduler.CalculateNextCheck(usage, now));
+        usage.WeeklyResetAt = null;
+        Assert.Equal(now.AddMinutes(5), AutoResumeScheduler.CalculateNextCheck(usage, now));
+    }
+
+    [Fact]
+    public async Task Scheduler_EarlyRecoveryBypassesOldResetCooldownAndClearsIt()
+    {
+        var target = new ConversationTarget { ThreadId = Id, Enabled = true, LastStatus = ConversationResumeStatus.WaitingForReset, NextResumeAt = DateTimeOffset.Now.AddDays(6) };
+        var settings = new MonitorSettings { Value = new() { AwaitingReset = true, Conversations = [target] } };
+        var goals = new ScheduledGoals();
+        using var scheduler = new AutoResumeScheduler(null!, new Cache(), settings, goals, new Notifications());
+        await scheduler.EvaluateAsync(false, CancellationToken.None);
+        Assert.Single(goals.Resumed); Assert.Null(target.NextResumeAt); Assert.False(settings.Value.AwaitingReset);
+    }
+
+    [Fact]
+    public async Task Scheduler_OrdinaryPollKeepsCooldownButManualCheckCanRetryWaitingGoal()
+    {
+        var target = new ConversationTarget { ThreadId = Id, Enabled = true, LastStatus = ConversationResumeStatus.WaitingForReset, NextResumeAt = DateTimeOffset.Now.AddMinutes(5) };
+        var settings = new MonitorSettings { Value = new() { Conversations = [target] } };
+        var goals = new ScheduledGoals();
+        using var scheduler = new AutoResumeScheduler(null!, new Cache(), settings, goals, new Notifications());
+        await scheduler.EvaluateAsync(false, CancellationToken.None);
+        Assert.Empty(goals.Resumed);
+        await scheduler.RunNowAsync(CancellationToken.None);
+        Assert.Single(goals.Resumed);
+    }
+
+    [Fact]
+    public async Task Scheduler_NotificationWakesWaitingLoopBeforeScheduledReset()
+    {
+        var settings = new MonitorSettings { Value = new() { Conversations = [new() { ThreadId = Id, Enabled = true, LastStatus = ConversationResumeStatus.WaitingForReset, NextResumeAt = DateTimeOffset.Now.AddDays(6) }] } };
+        var goals = new ScheduledGoals { Usage = new() { Status = UsageStatus.Available, DataSource = "App Server", OrdinaryUsageAllowed = false, WeeklyRemainingPercent = 0, WeeklyResetAt = DateTimeOffset.Now.AddDays(6) } };
+        using var scheduler = new AutoResumeScheduler(null!, new Cache(), settings, goals, new Notifications());
+        try
+        {
+            await scheduler.StartAsync(CancellationToken.None);
+            Assert.Empty(goals.Resumed); Assert.True(scheduler.NextCheckAt <= DateTimeOffset.Now.AddMinutes(5));
+            goals.Usage = new() { Status = UsageStatus.Available, DataSource = "App Server", OrdinaryUsageAllowed = true, WeeklyRemainingPercent = 100 };
+            goals.SignalQuotaChange();
+            await goals.ResumeObserved.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            Assert.Single(goals.Resumed);
+        }
+        finally { await scheduler.StopAsync(CancellationToken.None); }
+        var reads = goals.UsageReads;
+        goals.SignalQuotaChange(); await Task.Delay(50);
+        Assert.Equal(reads, goals.UsageReads);
+    }
+
+    private sealed class WakeMonitor : IAutoResumeScheduler
+    {
+        public int Requests;
+        public DateTimeOffset? NextCheckAt => null;
+        public string Status => "";
+        public event EventHandler? StatusChanged { add { } remove { } }
+        public event Action<UsageData>? UsageUpdated { add { } remove { } }
+        public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
+        public Task StartAsync(CancellationToken token) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken token) => Task.CompletedTask;
+        public Task<AutoResumeRunResult> RunNowAsync(CancellationToken token) => Task.FromResult(new AutoResumeRunResult("", null, []));
+        public void RequestCheck() => Requests++;
+    }
+
+    [Fact]
+    public async Task ActiveWriterConflict_IsBusyAndDoesNotActivateGoal_CanRetryAfterRelease()
+    {
+        await using var fixture = new Fixture();
+        fixture.Backend.ThreadStatus = "notLoaded";
+        fixture.Backend.HistoryMode = "paginated";
+        fixture.Backend.ResumeError = HostRpcException.FromError(Json(new { code = -32600, message = $"thread {Id} already has an active writer" }), "thread/resume");
+        var result = await fixture.Service.ResumeAsync(fixture.Target, default);
+        Assert.Equal(ConversationResumeStatus.Busy, result.Status);
+        Assert.False(fixture.Service.HasActiveWork);
+        Assert.Equal("usageLimited", fixture.Backend.GoalStatus);
+        Assert.DoesNotContain(fixture.Backend.Calls, c => c.Method == "thread/goal/set");
+        Assert.False(string.IsNullOrWhiteSpace(fixture.Target.Compatibility));
+        fixture.Backend.ResumeError = null;
+        var retry = await fixture.Service.ResumeAsync(fixture.Target, default);
+        Assert.Equal(ConversationResumeStatus.Resumed, retry.Status);
+        Assert.Single(fixture.Backend.Calls, c => c.Method == "thread/goal/set");
+    }
+
+    [Theory]
+    [InlineData(-32601, ConversationResumeStatus.Unsupported)]
+    [InlineData(-32600, ConversationResumeStatus.Failed)]
+    [InlineData(-32602, ConversationResumeStatus.Failed)]
+    public async Task OtherRpcErrors_AreNotAllReportedAsUnsupported(int code, ConversationResumeStatus expected)
+    {
+        await using var fixture = new Fixture();
+        fixture.Backend.ResumeError = HostRpcException.FromError(Json(new { code, message = "Private server details should not be retained" }), "thread/resume");
+        var result = await fixture.Service.ResumeAsync(fixture.Target, default);
+        Assert.Equal(expected, result.Status); Assert.Contains("thread/resume", result.Message); Assert.Contains(code.ToString(), result.Message);
+        Assert.DoesNotContain("Private server details", result.Message);
+        Assert.DoesNotContain(fixture.Backend.Calls, c => c.Method == "thread/goal/set");
+    }
+
+    [Fact]
+    public void RpcErrorClassificationRetainsOnlyCodeMethodAndKnownReason()
+    {
+        var error = HostRpcException.FromError(Json(new { code = -32600, message = $"thread {Id} already has an active writer" })).ForMethod("thread/resume");
+        Assert.Equal(HostRpcFailure.ActiveWriter, error.Failure); Assert.Equal("thread/resume", error.Method);
+        Assert.DoesNotContain(Id, error.ToString());
+        Assert.Equal(HostRpcFailure.Unknown, HostRpcException.FromError(Json(new { code = -32600, message = "invalid request" })).Failure);
+    }
+
+    [Fact]
+    public void GoalRuntimeRefreshPreservesUnsavedSelectionAndNotifiesDetailsBindings()
+    {
+        var visible = new ConversationTarget { ThreadId = Id, Enabled = false, LastStatus = ConversationResumeStatus.Unknown };
+        var notifications = new List<string?>(); visible.PropertyChanged += (_, e) => notifications.Add(e.PropertyName);
+        var saved = new ConversationTarget { ThreadId = Id, Enabled = true, LastStatus = ConversationResumeStatus.Busy, LastMessage = "Writer is held by another client.", GoalStatus = "usageLimited", Compatibility = "Writer held" };
+        CodexUsageAssistant.Views.GoalMonitorWindow.MergeRuntimeResults([visible], [saved]);
+        Assert.False(visible.Enabled); Assert.Equal(ConversationResumeStatus.Busy, visible.LastStatus);
+        Assert.Equal(saved.LastMessage, visible.LastMessage); Assert.Equal(saved.Compatibility, visible.Compatibility);
+        Assert.Contains(nameof(ConversationTarget.LastMessage), notifications);
+        Assert.Contains(nameof(ConversationTarget.LastStatus), notifications);
+    }
+
+    [Fact]
+    public void FreshUsageRecoveryWakesMonitor_WithoutPollingFeedbackOrDomApproval()
+    {
+        var scheduler = new WakeMonitor();
+        var vm = new CodexUsageAssistant.ViewModels.FloatingBallViewModel(null!, null!, null!, null!, scheduler, null!, null!, null!);
+        vm.ApplyFreshUsage(new() { Status = UsageStatus.Available, DataSource = "App Server", OrdinaryUsageAllowed = false, WeeklyRemainingPercent = 0 });
+        Assert.Equal(0, scheduler.Requests);
+        var recovered = new UsageData { Status = UsageStatus.Available, DataSource = "App Server", OrdinaryUsageAllowed = true, WeeklyRemainingPercent = 100 };
+        vm.ApplyFreshUsage(recovered); Assert.Equal(1, scheduler.Requests);
+        vm.ApplyFreshUsage(recovered); Assert.Equal(1, scheduler.Requests);
+        vm.ApplyFreshUsage(new() { Status = UsageStatus.Available, DataSource = "DOM", OrdinaryUsageAllowed = true, WeeklyRemainingPercent = 100 });
+        Assert.Equal(1, scheduler.Requests);
     }
 }

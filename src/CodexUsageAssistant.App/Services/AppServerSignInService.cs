@@ -25,7 +25,7 @@ public sealed class AppServerSignInService : IAppServerSignInService
         var panel = new StackPanel { Margin = new Thickness(24) }; panel.Children.Add(message); panel.Children.Add(cancel);
         var window = new Window
         {
-            Title = L("Codex EzMate v1.21.0 — 登入 Codex", "Codex EzMate v1.21.0 — Sign in to Codex"),
+            Title = L("Codex EzMate v1.21.3 — 登入 Codex", "Codex EzMate v1.21.3 — Sign in to Codex"),
             Width = 480, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize,
             WindowStartupLocation = WindowStartupLocation.CenterScreen, Content = panel,
             Background = new SolidColorBrush(Color.FromRgb(234, 241, 245)), Foreground = new SolidColorBrush(Color.FromRgb(36, 59, 73))

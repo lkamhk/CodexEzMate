@@ -16,7 +16,8 @@ public sealed class AutoResumeScheduler : IAutoResumeScheduler, IDisposable
     private readonly SemaphoreSlim _evaluation = new(1, 1);
     private int _requested;
     private DateTimeOffset _lastEvaluation;
-    public void RequestCheck() => Interlocked.Exchange(ref _requested, 1);
+    // Bit 1 wakes polling; bit 2 allows a quota-change check to bypass reset cooldowns.
+    public void RequestCheck() => Interlocked.Or(ref _requested, 3);
 
     public DateTimeOffset? NextCheckAt { get; private set; }
     public string Status { get; private set; } = LocalizationService.Pick("監控未啟用", "Monitoring is disabled");
@@ -75,27 +76,29 @@ public sealed class AutoResumeScheduler : IAutoResumeScheduler, IDisposable
         {
             while (!token.IsCancellationRequested)
             {
-                await EvaluateAsync(forceFirstCheck, token);
+                var requested = Interlocked.Exchange(ref _requested, 0);
+                await EvaluateAsync(forceFirstCheck || (requested & 2) != 0, token);
                 forceFirstCheck = false;
-                while (DateTimeOffset.Now < (NextCheckAt ?? DateTimeOffset.Now.Add(PollInterval)))
+                var nextCheck = NextCheckAt ?? DateTimeOffset.Now.Add(PollInterval);
+                while (DateTimeOffset.Now < nextCheck)
                 {
                     await Task.Delay(2000, token);
                     if (Volatile.Read(ref _requested) != 0 && DateTimeOffset.UtcNow - _lastEvaluation >= TimeSpan.FromSeconds(10))
-                    { Interlocked.Exchange(ref _requested, 0); break; }
+                        break;
                 }
             }
         }
         catch (OperationCanceledException) { }
     }
 
-    private async Task<AutoResumeRunResult> EvaluateAsync(bool forceResumeCheck, CancellationToken token)
+    internal async Task<AutoResumeRunResult> EvaluateAsync(bool forceResumeCheck, CancellationToken token)
     {
         await _evaluation.WaitAsync(token);
-        try { return await EvaluateCoreAsync(token); }
+        try { return await EvaluateCoreAsync(forceResumeCheck, token); }
         finally { _evaluation.Release(); }
     }
 
-    private async Task<AutoResumeRunResult> EvaluateCoreAsync(CancellationToken token)
+    private async Task<AutoResumeRunResult> EvaluateCoreAsync(bool forceResumeCheck, CancellationToken token)
     {
         _lastEvaluation = DateTimeOffset.UtcNow;
         var results = new List<ConversationResumeResult>();
@@ -115,7 +118,8 @@ public sealed class AutoResumeScheduler : IAutoResumeScheduler, IDisposable
             }
             if (!_goalResume.HasActiveWork)
                 foreach (var target in settings.Conversations.Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.ThreadId) &&
-                    (x.NextResumeAt is null || x.NextResumeAt <= DateTimeOffset.Now)))
+                    (x.NextResumeAt is null || x.NextResumeAt <= DateTimeOffset.Now ||
+                     (settings.AwaitingReset || forceResumeCheck) && x.LastStatus == ConversationResumeStatus.WaitingForReset)))
                 {
                     token.ThrowIfCancellationRequested();
                     var result = await _goalResume.ResumeAsync(target, token);
@@ -128,15 +132,18 @@ public sealed class AutoResumeScheduler : IAutoResumeScheduler, IDisposable
                         if (saved is null) return;
                         saved.LastStatus = result.Status; saved.LastMessage = result.Message; saved.LastAttemptAt = result.AttemptedAt;
                         saved.GoalStatus = target.GoalStatus; saved.Cwd = target.Cwd;
+                        saved.Compatibility = target.Compatibility;
                         var current = _goalResume.State;
-                        if (current.ThreadId == target.ThreadId && result.Status is ConversationResumeStatus.Resumed or ConversationResumeStatus.Resuming or ConversationResumeStatus.PendingConfirmation or ConversationResumeStatus.AwaitingApproval)
+                        if (current.ThreadId == target.ThreadId && result.Status is ConversationResumeStatus.Resumed or ConversationResumeStatus.Resuming or ConversationResumeStatus.Queued or ConversationResumeStatus.PendingConfirmation or ConversationResumeStatus.AwaitingApproval)
                         { saved.GoalStatus = current.GoalStatus; saved.LastStatus = current.Status; saved.LastMessage = current.Message; }
+                        saved.NextResumeAt = saved.LastStatus == ConversationResumeStatus.WaitingForReset ? DateTimeOffset.Now.Add(PollInterval) : null;
                     }, token);
                     if (_goalResume.HasActiveWork) break;
                 }
             NextCheckAt = DateTimeOffset.Now.Add(PollInterval);
             await _settings.UpdateAsync(value => { value.NextCheckAt = NextCheckAt; value.AwaitingReset = false; }, token);
-            SetStatus(_goalResume.HasActiveWork ? _goalResume.State.Message : L("檢查完成；只自動恢復已勾選且因額度停止的 Goal。", "Check complete; only selected usage-limited Goals resume automatically."));
+            var issue = results.LastOrDefault(r => r.Status is ConversationResumeStatus.Busy or ConversationResumeStatus.Unsupported or ConversationResumeStatus.Failed or ConversationResumeStatus.PendingConfirmation);
+            SetStatus(_goalResume.HasActiveWork ? _goalResume.State.Message : issue is not null ? issue.Message : L("檢查完成；只自動恢復已勾選且因額度停止的 Goal。", "Check complete; only selected usage-limited Goals resume automatically."));
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception ex) when (CodexAppServerHost.IsExpected(ex))
@@ -166,7 +173,8 @@ public sealed class AutoResumeScheduler : IAutoResumeScheduler, IDisposable
             }, CancellationToken.None);
         }
         catch (Exception ex) when (CodexAppServerHost.IsExpected(ex)) { }
-        if (!_goalResume.HasActiveWork) RequestCheck();
+        // Execution state changes must not defeat the retry cooldown after a failed turn.
+        if (!_goalResume.HasActiveWork) Interlocked.Or(ref _requested, 1);
     }
 
     internal static DateTimeOffset CalculateNextCheck(UsageData usage, DateTimeOffset now)
@@ -176,7 +184,9 @@ public sealed class AutoResumeScheduler : IAutoResumeScheduler, IDisposable
         if (usage.WeeklyRemainingPercent is <= 0 && usage.WeeklyResetAt is { } weekly) resets.Add(weekly);
         if (resets.Count == 0) return now.Add(PollInterval);
         var next = resets.Max().Add(ResetSafetyDelay);
-        return next <= now ? now.Add(PollInterval) : next;
+        var pollAt = now.Add(PollInterval);
+        // Credits and server-side grants can restore quota before the scheduled reset.
+        return next <= now || next > pollAt ? pollAt : next;
     }
 
     internal static TimeSpan CalculateResumeRetryDelay(int retryAttempt) => retryAttempt switch

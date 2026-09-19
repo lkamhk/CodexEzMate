@@ -14,6 +14,8 @@ public partial class GoalMonitorWindow : Window
     private readonly ObservableCollection<ConversationTarget> _conversationTargets = [];
     private AutoResumeSettings _autoModel = new();
     private readonly IGoalResumeService? _goals;
+    private bool _closed;
+    private int _refreshSequence;
     public GoalMonitorWindow(IAutoResumeSettingsService settings, IConversationDiscoveryService discovery, IAutoResumeScheduler scheduler, IGoalResumeService? goals = null)
     {
         _autoResumeSettings = settings; _conversationDiscovery = discovery; _autoResumeScheduler = scheduler;
@@ -21,7 +23,7 @@ public partial class GoalMonitorWindow : Window
         InitializeComponent();
         ConversationsGrid.ItemsSource = _conversationTargets;
         _autoResumeScheduler.StatusChanged += OnSchedulerStatusChanged;
-        Closed += (_, _) => _autoResumeScheduler.StatusChanged -= OnSchedulerStatusChanged;
+        Closed += (_, _) => { _closed = true; _autoResumeScheduler.StatusChanged -= OnSchedulerStatusChanged; };
         if (_goals is not null) { _goals.Changed += OnGoalChanged; Closed += (_, _) => _goals.Changed -= OnGoalChanged; }
         Loaded += OnLoaded;
     }
@@ -48,7 +50,6 @@ public partial class GoalMonitorWindow : Window
         if (Dispatcher.HasShutdownStarted) return;
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            PendingRequestsList.ItemsSource = _goals?.PendingRequests;
             PauseGoalButton.IsEnabled = _goals?.HasActiveWork == true;
             if (_goals is null) return;
             var target = _conversationTargets.FirstOrDefault(x => x.ThreadId == _goals.State.ThreadId);
@@ -73,12 +74,8 @@ public partial class GoalMonitorWindow : Window
     {
         if (_goals is null || ConversationsGrid.SelectedItem is not ConversationTarget target) return;
         var result = await _goals.ContinuePausedAsync(target, CancellationToken.None);
+        target.LastStatus = result.Status; target.LastMessage = result.Message; target.LastAttemptAt = result.AttemptedAt;
         UpdateAutoResumeStatus(result.Message);
-    }
-    private void OnReviewRequest(object sender, RoutedEventArgs e)
-    {
-        if (_goals is not null && PendingRequestsList.SelectedItem is GoalPendingRequest request)
-            new GoalApprovalWindow(_goals, request).Show();
     }
     private async void OnScanConversationsClick(object sender, RoutedEventArgs e)
     {
@@ -169,8 +166,37 @@ public partial class GoalMonitorWindow : Window
         }, CancellationToken.None);
     }
 
-    private void OnSchedulerStatusChanged(object? sender, EventArgs e) =>
-        Dispatcher.BeginInvoke(new Action(() => UpdateAutoResumeStatus(_autoResumeScheduler.Status)));
+    private void OnSchedulerStatusChanged(object? sender, EventArgs e)
+    {
+        if (_closed || Dispatcher.HasShutdownStarted) return;
+        Dispatcher.BeginInvoke(new Action(async () =>
+        {
+            var sequence = ++_refreshSequence;
+            try
+            {
+                var current = await _autoResumeSettings.LoadAsync(CancellationToken.None);
+                if (_closed || sequence != _refreshSequence) return;
+                MergeRuntimeResults(_conversationTargets, current.Conversations);
+                UpdateAutoResumeStatus(_autoResumeScheduler.Status);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            { if (!_closed) UpdateAutoResumeStatus(_autoResumeScheduler.Status); }
+        }));
+    }
+
+    internal static void MergeRuntimeResults(IEnumerable<ConversationTarget> displayed, IEnumerable<ConversationTarget> saved)
+    {
+        var results = saved.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.Last());
+        foreach (var row in displayed)
+        {
+            if (!results.TryGetValue(row.Key, out var current)) continue;
+            // Preserve unsaved checkbox edits, row identity and the user's selection.
+            row.LastStatus = current.LastStatus; row.LastMessage = current.LastMessage;
+            row.LastAttemptAt = current.LastAttemptAt; row.NextResumeAt = current.NextResumeAt;
+            row.LastTurnId = current.LastTurnId; row.GoalStatus = current.GoalStatus;
+            row.Compatibility = current.Compatibility; row.Cwd = current.Cwd;
+        }
+    }
 
     private void UpdateAutoResumeStatus(string message)
     {

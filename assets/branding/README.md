@@ -1,7 +1,7 @@
 # Codex EzMate branding
 
 - `codex-ezmate-app-icon.png`: symbol-only source for application, window, installer and tray icons.
-- `codex-ezmate-logo-mate.png`: user-provided wordmark version for larger branding areas.
+- `codex-ezmate-logo-mate.png`: user-provided wordmark version for larger branding areas, with its exterior black background removed using imagegen. The area outside the blue rounded tile has real alpha transparency.
 - `codex-ezmate-promo.png`: user-provided promotional artwork for the project README.
 - `codex-ezmate-logo-concept-v2.png`: original generated concept retained as a source reference.
 

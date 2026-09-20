@@ -23,13 +23,15 @@ public partial class GoalMonitorWindow : Window
         InitializeComponent();
         ConversationsGrid.ItemsSource = _conversationTargets;
         _autoResumeScheduler.StatusChanged += OnSchedulerStatusChanged;
-        Closed += (_, _) => { _closed = true; _autoResumeScheduler.StatusChanged -= OnSchedulerStatusChanged; };
+        Closed += (_, _) => { _closed = true; _autoResumeScheduler.StatusChanged -= OnSchedulerStatusChanged;
+            ConversationsGrid.ItemsSource = null; _conversationTargets.Clear(); _autoModel = new(); SelectedGoalResultText.Clear(); };
         if (_goals is not null) { _goals.Changed += OnGoalChanged; Closed += (_, _) => _goals.Changed -= OnGoalChanged; }
         Loaded += OnLoaded;
     }
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         _autoModel = await _autoResumeSettings.LoadAsync(CancellationToken.None);
+        if (_closed) { _autoModel = new(); return; }
         AutoResumeEnabledCheckBox.IsChecked = _autoModel.MonitorEnabled;
         _conversationTargets.Clear();
         foreach (var target in _autoModel.Conversations) _conversationTargets.Add(target);
@@ -47,9 +49,10 @@ public partial class GoalMonitorWindow : Window
 
     private void OnGoalChanged()
     {
-        if (Dispatcher.HasShutdownStarted) return;
+        if (_closed || Dispatcher.HasShutdownStarted) return;
         Dispatcher.BeginInvoke(new Action(() =>
         {
+            if (_closed) return;
             PauseGoalButton.IsEnabled = _goals?.HasActiveWork == true;
             if (_goals is null) return;
             var target = _conversationTargets.FirstOrDefault(x => x.ThreadId == _goals.State.ThreadId);

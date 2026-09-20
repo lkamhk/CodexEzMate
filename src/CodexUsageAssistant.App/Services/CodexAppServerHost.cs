@@ -41,6 +41,19 @@ public sealed class CodexAppServerHost : IAsyncDisposable, IDisposable
     public string Details => $"{Endpoint} · {(OwnsServer ? L("本程式啟動", "Owned server") : L("未持有程序／外部 server", "No owned process / external server"))}\n{_detail}";
     public event Action? Changed;
     public Func<CancellationToken, Task<bool>>? BeforeStopAsync { get; set; }
+    internal int? CompatibleUsagePort(WindowPosition usage)
+    {
+        if (State != AppServerHostState.Ready || !OwnsServer) return null;
+        try
+        {
+            if (!string.Equals(AppServerUsageService.FindExecutable(usage.CodexExecutablePath), AppServerUsageService.FindExecutable(_options.HostExecutablePath), StringComparison.OrdinalIgnoreCase)) return null;
+            if (usage.ProxyEnabled != _options.ProxyEnabled) return null;
+            if (usage.ProxyEnabled && (usage.ProxyServer != _options.ProxyServer || usage.ProxyBypassList != _options.ProxyBypassList ||
+                usage.ProxyUsername != _options.ProxyUsername || usage.EncryptedProxyPassword != _options.EncryptedProxyPassword)) return null;
+            return _options.HostPort;
+        }
+        catch (Exception ex) when (IsExpected(ex)) { return null; }
+    }
 
     public CodexAppServerHost(ISettingsService settings) : this(settings, new AppServerHostRuntime(),
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexUsageAssistant", "settings"),

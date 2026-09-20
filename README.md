@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/CodexUsageAssistant.App/Assets/CodexUsageAssistant-preview.png" alt="Codex EzMate icon" width="96" height="96">
+  <img src="assets/branding/codex-ezmate-logo-mate.png" alt="Codex EzMate logo" width="180" height="180">
 </p>
 
 # Codex EzMate
@@ -8,7 +8,7 @@
 
 A Windows companion for Codex: check remaining usage, manage local conversations, and host App Server in the background.
 
-**Current source version: 1.21.3** · Windows x64 · .NET 8 / WPF · Traditional Chinese / Simplified Chinese / English
+**Current source version: 1.21.4** · Windows x64 · .NET 8 / WPF · Traditional Chinese / Simplified Chinese / English
 
 [Download](https://github.com/lkamhk/CodexEzMate/releases) · [Report an issue](https://github.com/lkamhk/CodexEzMate/issues)
 
@@ -17,6 +17,10 @@ A Windows companion for Codex: check remaining usage, manage local conversations
 > **Goal monitoring is available for experimental testing — feedback is welcome!** It sends an automatic continuation message to the original conversation. Processing that message and continuing the Goal consume tokens and Codex usage quota. Start with non-critical work; recovery after real quota exhaustion still needs live verification.
 
 This is a third-party project, not an official OpenAI product.
+
+<p align="center">
+  <img src="assets/branding/codex-ezmate-promo.png" alt="Codex EzMate — Make It Simple" width="640">
+</p>
 
 ## Screenshots
 
@@ -39,6 +43,16 @@ These screenshots show the English interface with example usage, conversations, 
 | Server hosting | Start or reuse a local Codex App Server, with sign-in, connection status, restart controls, and recovery after unexpected exits. |
 | Global shortcuts | Assign shortcuts to open Session Browser, Goal monitoring, Server host, usage details, settings, and other windows. |
 | Usage refresh and preferences | Scheduled and event-triggered usage refresh, proxy settings, and three interface languages. Refreshing usage is separate from updating the application. |
+
+## Memory improvements in 1.21.4
+
+- Session Browser previews load in 64K-character pages with a small bounded cache.
+- Token statistics and Goal observation read newly appended records instead of repeatedly scanning entire files.
+- Usage reads and notifications share a connection; compatible EzMate-owned App Servers can be reused.
+- Closing windows releases their resources explicitly. The application does not periodically force garbage collection or trim its working set.
+- Includes the new app icon, larger “mate” logo, and promotional artwork.
+
+In a development benchmark with fixed synthetic conversations and 20 Session Browser open/close cycles, peak main-process working set decreased from **302.7 to 203.8 MiB**, and peak private bytes from **228.7 to 127.1 MiB** compared with 1.21.3. These are controlled Debug/WPF measurements, not guaranteed memory usage for every installation; enabled features, conversation size, and child processes affect actual usage.
 
 ## Installation and first use
 
@@ -81,7 +95,7 @@ Choose **Open Session Browser** from the right-click menu. Search conversations,
 
 The interface immediately follows the main app's language. Changing languages does not rewrite conversation names or messages. Opening the browser again brings the same WPF window to the foreground. While a backup, move, or restore is running, closing the browser or exiting EzMate is blocked. You can cancel the remaining operations and exit once the current file has been handled safely. Exiting EzMate also closes Session Browser.
 
-Previews have size and message-count limits. Use **Open JSONL** to view the full record.
+Previews load in pages of up to 64K characters. Use **Previous page**, **Next page**, and **Copy page**; only the current and nearby pages are cached. Preview size and message-count limits still apply. Use **Open JSONL** to view the full record.
 
 ### Goal monitoring
 

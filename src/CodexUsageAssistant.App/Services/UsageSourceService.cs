@@ -23,7 +23,9 @@ public sealed class UsageSourceService(ISettingsService settings, IAppServerUsag
             {
                 if (!await (signIn ?? new AppServerSignInService()).SignInAsync(options.CodexExecutablePath, cancellationToken)) return null;
                 // An explicit Codex sign-in must refresh that account, never silently switch to DOM.
-                return await appServer.ReadAsync(options.CodexExecutablePath, cancellationToken);
+                return appServer is AppServerUsageService native
+                    ? await native.ReadAfterSignInAsync(options.CodexExecutablePath, cancellationToken)
+                    : await appServer.ReadAsync(options.CodexExecutablePath, cancellationToken);
             }
             var result = await appServer.ReadAsync(options.CodexExecutablePath, cancellationToken);
             if (result.Status == UsageStatus.Available || options.UsageReadMode == UsageReadMode.AppServerOnly) return result;

@@ -136,7 +136,12 @@ public sealed class DesktopGoalResumeService : IGoalResumeService, IAsyncDisposa
             if (observation.IsBusy || !observation.HasLifecycle) { ReleaseLease(); return Result(target, ConversationResumeStatus.Busy, L("對話已開始執行。", "The conversation has started running.")); }
             if (!GoalProtocol.UsageAllowsResume(await ReadQuotaAsync(token).ConfigureAwait(false)))
             { ReleaseLease(); return Result(target, ConversationResumeStatus.WaitingForReset, L("額度仍不可用。", "Quota is not available.")); }
-            _record = new(2, target, GoalProtocol.GoalFingerprint(current), _port, path, Guid.NewGuid().ToString(), "activating");
+            var requestId = Guid.NewGuid().ToString();
+            var fingerprint = GoalProtocol.GoalFingerprint(current);
+            // Prime the append cursor before sending, so a fast large response cannot hide the receipt.
+            var primed = await GoalLocalObservation.ReadAsync(path, target.ThreadId!, requestId, fingerprint, token).ConfigureAwait(false);
+            if (primed.IsBusy) { ReleaseLease(); return Result(target, ConversationResumeStatus.Busy, L("對話已開始執行。", "The conversation has started running.")); }
+            _record = new(2, target, fingerprint, _port, path, requestId, "activating");
             await PersistAsync().ConfigureAwait(false);
             Publish(ConversationResumeStatus.Resuming, L("正在恢復原 Goal 狀態…", "Restoring the original Goal state…"));
             var activated = GoalProtocol.Property(await _connection.RequestAsync("thread/goal/set", new { threadId = target.ThreadId, status = "active" }, token).ConfigureAwait(false), "goal");
@@ -312,6 +317,7 @@ public sealed class DesktopGoalResumeService : IGoalResumeService, IAsyncDisposa
         var result = status == "complete" ? ConversationResumeStatus.Completed : status == "usageLimited" ? ConversationResumeStatus.WaitingForReset :
             status is "paused" or "budgetLimited" or "blocked" ? ConversationResumeStatus.Paused : ConversationResumeStatus.NoActionNeeded;
         File.Delete(_statePath);
+        GoalLocalObservation.Forget(record.Path);
         Publish(result, message, status ?? "unknown");
         _record = null; ReleaseLease(); Changed?.Invoke();
         if (result == ConversationResumeStatus.Completed) _notifications.ShowNotification(L("Goal 已完成", "Goal completed"), record.Target.Title);

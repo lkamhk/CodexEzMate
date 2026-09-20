@@ -36,5 +36,7 @@ public sealed class BrowserSession : System.ComponentModel.INotifyPropertyChange
 
 public sealed record BrowserMessage(string Timestamp, string Role, string Text);
 public sealed record BrowserPreview(IReadOnlyList<BrowserMessage> Messages, bool Truncated);
+public sealed record BrowserPreviewCursor(string Path, long Length, long WrittenTicks, int Message, int Character);
+public sealed record BrowserPreviewPage(string Text, BrowserPreviewCursor? Next, bool Reloaded, bool Truncated);
 public sealed record BrowserScan(IReadOnlyList<BrowserSession> Sessions, int Skipped);
 public enum BrowserFileAction { Backup, Trash, Restore }

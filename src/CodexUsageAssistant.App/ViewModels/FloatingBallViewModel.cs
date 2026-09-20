@@ -29,6 +29,7 @@ public partial class FloatingBallViewModel : ObservableObject
     private readonly IAutoResumeSettingsService _autoResumeSettings;
     private readonly IConversationDiscoveryService _conversationDiscovery;
     private readonly IGoalResumeService _goalResume;
+    private readonly UsageAppServerSession? _usageSession;
     private readonly CodexAppServerHost? _host;
     private UsageData? _lastUsage;
     private readonly CancellationTokenSource _backgroundRefreshCts = new();
@@ -171,7 +172,7 @@ public partial class FloatingBallViewModel : ObservableObject
     public FloatingBallViewModel(IUsageLoginService usageLogin,
         ISettingsService settings, IProxyTestService proxyTester, IUsageCacheService cache,
         IAutoResumeScheduler autoResumeScheduler, IAutoResumeSettingsService autoResumeSettings,
-        IConversationDiscoveryService conversationDiscovery, IGoalResumeService goalResume, CodexAppServerHost? host = null, AppUpdateService? updates = null)
+        IConversationDiscoveryService conversationDiscovery, IGoalResumeService goalResume, CodexAppServerHost? host = null, AppUpdateService? updates = null, UsageAppServerSession? usageSession = null)
     {
         _usageLogin = usageLogin;
         _settings = settings;
@@ -181,6 +182,7 @@ public partial class FloatingBallViewModel : ObservableObject
         _autoResumeSettings = autoResumeSettings;
         _conversationDiscovery = conversationDiscovery;
         _goalResume = goalResume;
+        _usageSession = usageSession;
         _host = host;
         _updates = updates;
     }
@@ -274,7 +276,7 @@ public partial class FloatingBallViewModel : ObservableObject
     private async Task RunBackgroundRefreshAsync(CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
-        await using var notifications = new UsageChangeMonitor();
+        await using var notifications = new UsageChangeMonitor(_usageSession);
         var observedDay = DateOnly.FromDateTime(DateTime.Now);
         var firstCheck = true;
         TimeSpan? observedInterval = null;

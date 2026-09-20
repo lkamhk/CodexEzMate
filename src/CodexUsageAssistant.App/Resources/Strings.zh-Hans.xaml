@@ -2,10 +2,10 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
   <sys:String x:Key="HotkeySettings">快捷键设置</sys:String>
-  <sys:String x:Key="SettingsTitle">Codex EzMate v1.21.3 设置</sys:String>
-  <sys:String x:Key="LoginTitle">Codex EzMate v1.21.3 — 登录 ChatGPT</sys:String>
-  <sys:String x:Key="PickerTitle">Codex EzMate v1.21.3 — 抓取 Resume 座标</sys:String>
-  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.21.3 — 用量详情</sys:String>
+  <sys:String x:Key="SettingsTitle">Codex EzMate v1.21.4 设置</sys:String>
+  <sys:String x:Key="LoginTitle">Codex EzMate v1.21.4 — 登录 ChatGPT</sys:String>
+  <sys:String x:Key="PickerTitle">Codex EzMate v1.21.4 — 抓取 Resume 座标</sys:String>
+  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.21.4 — 用量详情</sys:String>
   <sys:String x:Key="UsageOverview">用量概览</sys:String>
   <sys:String x:Key="UsageSourceTab">资料来源</sys:String>
   <sys:String x:Key="UsageSourceTitle">用量资料读取方式</sys:String>
@@ -101,8 +101,8 @@
   <sys:String x:Key="HostExecutable">codex.exe 完整路径（必填）</sys:String>
   <sys:String x:Key="HostDetect">自动检测</sys:String>
   <sys:String x:Key="TrayUsageIcon">系统托盘图标显示剩余百分比（5 小时优先，否则每周）</sys:String>
-  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.21.3 — Server 代管</sys:String>
-  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.21.3 — Goal 监控</sys:String>
+  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.21.4 — Server 代管</sys:String>
+  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.21.4 — Goal 监控</sys:String>
   <sys:String x:Key="CloseWindow">关闭</sys:String>
   <sys:String x:Key="AutoCheckUpdates">启动时自动检查更新</sys:String>
   <sys:String x:Key="GoalBackgroundHelp">开发测试功能：额度可用时，恢复已勾选且因额度停止的原 Desktop Goal，并加入一条继续消息。真正额度耗尽后的恢复仍待实测。</sys:String>

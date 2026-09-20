@@ -2,10 +2,10 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
   <sys:String x:Key="HotkeySettings">Keyboard shortcuts</sys:String>
-  <sys:String x:Key="SettingsTitle">Codex EzMate v1.21.3 Settings</sys:String>
-  <sys:String x:Key="LoginTitle">Codex EzMate v1.21.3 — Sign in to ChatGPT</sys:String>
-  <sys:String x:Key="PickerTitle">Codex EzMate v1.21.3 — Pick Resume Position</sys:String>
-  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.21.3 — Usage Details</sys:String>
+  <sys:String x:Key="SettingsTitle">Codex EzMate v1.21.4 Settings</sys:String>
+  <sys:String x:Key="LoginTitle">Codex EzMate v1.21.4 — Sign in to ChatGPT</sys:String>
+  <sys:String x:Key="PickerTitle">Codex EzMate v1.21.4 — Pick Resume Position</sys:String>
+  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.21.4 — Usage Details</sys:String>
   <sys:String x:Key="UsageOverview">Your usage at a glance</sys:String>
   <sys:String x:Key="UsageSourceTab">Data source</sys:String>
   <sys:String x:Key="UsageSourceTitle">Usage data source</sys:String>
@@ -101,8 +101,8 @@
   <sys:String x:Key="HostExecutable">Full codex.exe path (required)</sys:String>
   <sys:String x:Key="HostDetect">Auto-detect</sys:String>
   <sys:String x:Key="TrayUsageIcon">Show remaining quota in tray icon (5-hour, otherwise weekly)</sys:String>
-  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.21.3 — Server host</sys:String>
-  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.21.3 — Goal monitoring</sys:String>
+  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.21.4 — Server host</sys:String>
+  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.21.4 — Goal monitoring</sys:String>
   <sys:String x:Key="CloseWindow">Close</sys:String>
   <sys:String x:Key="AutoCheckUpdates">Automatically check for updates at startup</sys:String>
   <sys:String x:Key="GoalBackgroundHelp">Development feature: restores selected usage-limited Desktop Goals when quota is available, then queues a continuation message. Real quota-exhaustion recovery still needs live verification.</sys:String>

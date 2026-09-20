@@ -37,7 +37,7 @@ internal sealed class GoalRpcConnection : IGoalRpcConnection
             connection._reader = connection.ReadAsync();
             await connection.RequestAsync("initialize", new
             {
-                clientInfo = new { name = "codex_ezmate_goals", title = "Codex EzMate", version = "1.21.3" },
+                clientInfo = new { name = "codex_ezmate_goals", title = "Codex EzMate", version = "1.21.4" },
                 capabilities = new { experimentalApi = true }
             }, timeout.Token).ConfigureAwait(false);
             await connection.SendAsync(new { method = "initialized", @params = new { } }, timeout.Token).ConfigureAwait(false);
@@ -103,7 +103,7 @@ internal sealed class GoalRpcConnection : IGoalRpcConnection
                 }
                 else if (root.TryGetProperty("id", out _) || method.GetString() is
                     "turn/started" or "turn/completed" or "thread/goal/updated" or "thread/status/changed" or
-                    "serverRequest/resolved" or "account/rateLimits/updated" ||
+                    "serverRequest/resolved" or "account/rateLimits/updated" or "account/updated" or "thread/tokenUsage/updated" ||
                     (method.GetString() is "item/started" or "item/completed") &&
                     GoalProtocol.Text(GoalProtocol.Property(GoalProtocol.Property(root, "params"), "item"), "type") == "fileChange")
                     await _events.Writer.WriteAsync(root.Clone(), _lifetime.Token).ConfigureAwait(false);

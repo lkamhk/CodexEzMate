@@ -7,7 +7,7 @@ using Microsoft.Data.Sqlite;
 
 namespace CodexUsageAssistant.Services;
 
-public sealed class SessionBrowserStore
+public sealed partial class SessionBrowserStore
 {
     public string CodexHome { get; }
     public string BackupRoot { get; }
@@ -61,15 +61,18 @@ public sealed class SessionBrowserStore
             for (var i = 0; i < count; i++)
             {
                 if (buffer[i] != '\n') { if (line.Length < 2 * 1024 * 1024) line.Append(buffer[i]); else overflow = true; continue; }
-                var parsed = overflow ? default : Parse(line.ToString());
+                using var document = overflow ? null : ParseDocument(line.ToString());
                 line.Clear(); overflow = false;
-                if (parsed.ValueKind == JsonValueKind.Object) yield return parsed;
+                if (document?.RootElement.ValueKind == JsonValueKind.Object) yield return document.RootElement;
                 if (++lines >= maxLines) yield break;
             }
             if (total >= maxCharacters) yield break;
         }
-        if (!overflow && line.Length != 0) { var parsed = Parse(line.ToString()); if (parsed.ValueKind == JsonValueKind.Object) yield return parsed; }
+        if (!overflow && line.Length != 0) { using var document = ParseDocument(line.ToString()); if (document?.RootElement.ValueKind == JsonValueKind.Object) yield return document.RootElement; }
     }
+
+    private static JsonDocument? ParseDocument(string value)
+    { try { return JsonDocument.Parse(value); } catch (JsonException) { return null; } }
 
     private static JsonElement Parse(string value)
     {
@@ -81,6 +84,11 @@ public sealed class SessionBrowserStore
         new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint });
 
     public BrowserScan Scan(CancellationToken token)
+    {
+        lock (_scanGate) { token.ThrowIfCancellationRequested(); return ScanCore(token); }
+    }
+
+    private BrowserScan ScanCore(CancellationToken token)
     {
         var names = LoadNames(token); var found = new List<BrowserSession>(); var skipped = 0;
         foreach (var entry in new[] { (Active, false, false, false), (Archived, true, false, false),
@@ -163,6 +171,26 @@ public sealed class SessionBrowserStore
     }
 
     private BrowserSession ReadHead(string path, bool archived, bool deleted, bool backup, CancellationToken token)
+    {
+        var file = new FileInfo(path);
+        var key = (path, archived, deleted, backup);
+        if (!_heads.TryGetValue(key, out var saved) || saved.Length != file.Length || saved.Written != file.LastWriteTimeUtc || saved.Created != file.CreationTimeUtc)
+        {
+            if (saved is not null) { _headBytes -= saved.Bytes; _heads.Remove(key); }
+            var item = ReadHeadCore(path, archived, deleted, backup, token);
+            var bytes = 256L + 2L * (item.Path.Length + item.Id.Length + item.Name.Length + item.NameSource.Length + item.Preview.Length + item.Project.Length + item.Provider.Length + item.Source.Length);
+            saved = new(file.Length, file.LastWriteTimeUtc, file.CreationTimeUtc, item, bytes);
+            while (_heads.Count > 0 && (_heads.Count >= 1024 || _headBytes + bytes > 4 * 1024 * 1024))
+            { var oldest = _heads.Keys.First(); _headBytes -= _heads[oldest].Bytes; _heads.Remove(oldest); }
+            if (bytes <= 4 * 1024 * 1024) { _heads[key] = saved; _headBytes += bytes; }
+        }
+        var s = saved.Session;
+        return new BrowserSession { Path = s.Path, Id = s.Id, Name = s.Name, NameSource = s.NameSource, Preview = s.Preview,
+            Project = s.Project, Provider = s.Provider, Source = s.Source, Internal = s.Internal, Archived = s.Archived,
+            Deleted = s.Deleted, Backup = s.Backup, Updated = s.Updated, Size = s.Size };
+    }
+
+    private BrowserSession ReadHeadCore(string path, bool archived, bool deleted, bool backup, CancellationToken token)
     {
         var file = new FileInfo(path);
         var info = new BrowserSession { Path = path, Archived = archived, Deleted = deleted, Backup = backup, Size = file.Length, Updated = file.LastWriteTime,

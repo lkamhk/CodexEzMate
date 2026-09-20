@@ -6,6 +6,8 @@ namespace CodexUsageAssistant.Services;
 
 internal sealed class UsageChangeMonitor : IAsyncDisposable
 {
+    private readonly UsageAppServerSession _session;
+    internal UsageChangeMonitor(UsageAppServerSession? session = null) => _session = session ?? UsageAppServerSession.Shared;
     private CancellationTokenSource? _cts;
     private Task? _listener;
     private FileSystemWatcher? _watcher;
@@ -65,21 +67,10 @@ internal sealed class UsageChangeMonitor : IAsyncDisposable
 
     private async Task ListenAsync(string? executable, CancellationToken token)
     {
-        while (!token.IsCancellationRequested)
-        {
-            try
-            {
-                using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-                connectTimeout.CancelAfter(TimeSpan.FromSeconds(30));
-                await using var client = await AppServerClient.ConnectAsync(executable, connectTimeout.Token);
-                await client.RequestAsync("account/rateLimits/read", null, connectTimeout.Token);
-                await client.ListenForUsageChangesAsync(Signal, token);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or
-                System.ComponentModel.Win32Exception or JsonException or OperationCanceledException or ArgumentException or KeyNotFoundException) { }
-            try { await Task.Delay(TimeSpan.FromSeconds(30), token); }
-            catch (OperationCanceledException) { break; }
-        }
+        _session.Subscribe(Signal);
+        try { await Task.Delay(Timeout.InfiniteTimeSpan, token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        finally { _session.Unsubscribe(Signal); }
     }
 
     private async Task StopAsync()

@@ -7,6 +7,20 @@ namespace CodexUsageAssistant.Services;
 
 internal static class LocalTokenUsageService
 {
+    private static readonly SemaphoreSlim CacheGate = new(1, 1);
+    private static readonly Dictionary<string, TokenFile> Files = new(StringComparer.OrdinalIgnoreCase);
+    private static string? _cacheKey;
+    private static long _access;
+    private readonly record struct EventKey(long Timestamp, long Current, long Last);
+    private sealed class TokenFile
+    {
+        internal IncrementalJsonlReader Reader = new();
+        internal long? Previous;
+        internal List<(EventKey Key, long Delta)> Events = [];
+        internal bool Found;
+        internal long Access;
+        internal void Reset() { Previous = null; Events.Clear(); Found = false; }
+    }
     internal static string CodexHome => Environment.GetEnvironmentVariable("CODEX_HOME") is { Length: > 0 } path
         ? path : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
 
@@ -29,34 +43,68 @@ internal static class LocalTokenUsageService
 
     internal static long? ReadToday(string home, DateTimeOffset now, CancellationToken token)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        long sum = 0;
-        bool found = false;
-        var midnight = new DateTimeOffset(now.Date, now.Offset);
-        foreach (var directory in new[] { "sessions", "archived_sessions" })
+        CacheGate.Wait(token);
+        try
         {
-            var root = Path.Combine(home, directory);
-            if (!Directory.Exists(root)) continue;
-            foreach (var file in Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories))
+            var cacheKey = Path.GetFullPath(home) + "|" + now.Date.ToString("O") + "|" + now.Offset;
+            if (_cacheKey != cacheKey) { Files.Clear(); _cacheKey = cacheKey; }
+            var seen = new HashSet<EventKey>(); var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            long sum = 0; var found = false;
+            var midnight = new DateTimeOffset(now.Date, now.Offset);
+            foreach (var directory in new[] { "sessions", "archived_sessions" })
             {
-                token.ThrowIfCancellationRequested();
-                if (File.GetLastWriteTimeUtc(file) < midnight.UtcDateTime) continue;
-                try
+                var root = Path.Combine(home, directory);
+                if (!Directory.Exists(root)) continue;
+                foreach (var file in Directory.EnumerateFiles(root, "*.jsonl", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint }))
                 {
-                    using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                    using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
-                    var count = CountToday(ReadLines(reader), now, seen, token);
-                    if (count is not null) { found = true; sum = checked(sum + count.Value); }
+                    token.ThrowIfCancellationRequested();
+                    if (File.GetLastWriteTimeUtc(file) < midnight.UtcDateTime) continue;
+                    live.Add(file);
+                    if (!Files.TryGetValue(file, out var state)) Files[file] = state = new();
+                    state.Access = ++_access;
+                    try
+                    {
+                        state.Reader.Read(file, (record, _, _) => Accumulate(record, state, now), state.Reset, token,
+                            bytes => bytes.Span.IndexOf("token_count"u8) >= 0);
+                        found |= state.Found;
+                        foreach (var entry in state.Events) if (seen.Add(entry.Key)) sum = checked(sum + entry.Delta);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Files.Remove(file); }
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
+            foreach (var old in Files.Keys.Where(x => !live.Contains(x)).ToArray()) Files.Remove(old);
+            var entries = Files.Values.Sum(x => x.Events.Count);
+            foreach (var pair in Files.OrderBy(x => x.Value.Access).ToArray())
+            {
+                if (Files.Count <= 512 && entries <= 100000) break;
+                entries -= pair.Value.Events.Count; Files.Remove(pair.Key);
+            }
+            return found ? sum : null;
         }
-        return found ? sum : null;
+        finally { CacheGate.Release(); }
     }
 
-    private static IEnumerable<string> ReadLines(StreamReader reader)
+    private static void Accumulate(JsonElement root, TokenFile state, DateTimeOffset now)
     {
-        while (reader.ReadLine() is { } line) yield return line;
+        try
+        {
+            if (GoalProtocol.Text(root, "type") != "event_msg") return;
+            var payload = GoalProtocol.Property(root, "payload");
+            if (GoalProtocol.Text(payload, "type") != "token_count") return;
+            var info = GoalProtocol.Property(payload, "info");
+            var total = GoalProtocol.Property(GoalProtocol.Property(info, "total_token_usage"), "total_tokens");
+            var stamp = GoalProtocol.Property(root, "timestamp");
+            if (total.ValueKind != JsonValueKind.Number || !total.TryGetInt64(out var current) || current < 0 ||
+                stamp.ValueKind != JsonValueKind.String || !stamp.TryGetDateTimeOffset(out var timestamp)) return;
+            var latest = GoalProtocol.Property(GoalProtocol.Property(info, "last_token_usage"), "total_tokens");
+            long? last = latest.ValueKind == JsonValueKind.Number && latest.TryGetInt64(out var number) && number >= 0 ? number : null;
+            var delta = state.Previous is long before && current >= before ? current - before : last;
+            state.Previous = current;
+            if (timestamp.ToOffset(now.Offset).Date != now.Date || delta is null) return;
+            state.Found = true;
+            state.Events.Add((new(timestamp.UtcTicks, current, last ?? -1), delta.Value));
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException) { }
     }
 
     internal static long? CountToday(IEnumerable<string> lines, DateTimeOffset now, HashSet<string> seen, CancellationToken token)

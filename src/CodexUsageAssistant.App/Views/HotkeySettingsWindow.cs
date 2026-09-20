@@ -26,7 +26,7 @@ public sealed class HotkeySettingsWindow : Window
     {
         _settings = settings;
         _hotkeys = hotkeys;
-        Title = "Codex EzMate v1.21.3 — " + L("快捷鍵設定", "Keyboard shortcuts");
+        Title = "Codex EzMate v1.21.4 — " + L("快捷鍵設定", "Keyboard shortcuts");
         Width = 720; Height = 590; MinWidth = 680; MinHeight = 540;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         FontSize = 14;

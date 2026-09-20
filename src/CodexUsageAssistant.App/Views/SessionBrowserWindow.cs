@@ -34,7 +34,7 @@ public sealed class SessionBrowserWindow : Window
     private readonly DataGrid _grid = new() { AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Extended,
         SelectionUnit = DataGridSelectionUnit.FullRow, EnableRowVirtualization = true, EnableColumnVirtualization = true, CanUserAddRows = false,
         CanUserDeleteRows = false, RowHeight = 30, HeadersVisibility = DataGridHeadersVisibility.Column, GridLinesVisibility = DataGridGridLinesVisibility.Horizontal };
-    private readonly TextBox _preview = new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
+    private readonly TextBox _preview = new() { IsReadOnly = true, IsUndoEnabled = false, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new System.Windows.Media.FontFamily("Consolas"), FontSize = 13, Padding = new Thickness(12) };
     private readonly TextBlock _previewTitle = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 6, 0, 6) };
     private readonly TextBlock _summary = new() { Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap };
@@ -44,11 +44,16 @@ public sealed class SessionBrowserWindow : Window
     private readonly Button _delete = new();
     private readonly Button _restore = new();
     private readonly Button _cancel = new();
+    private readonly Button _previousPage = new() { IsEnabled = false }, _nextPage = new() { IsEnabled = false }, _copyPage = new() { IsEnabled = false };
+    private readonly TextBlock _pageLabel = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) };
+    private readonly Stack<BrowserPreviewCursor?> _previousCursors = new();
+    private BrowserPreviewCursor? _previewCursor, _nextCursor;
     private readonly Dictionary<string, DataGridColumn> _columns = [];
     private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private IReadOnlyList<BrowserSession> _sessions = [];
     private ICollectionView? _view;
     private CancellationTokenSource? _scanCts, _previewCts, _operationCts;
+    private Task? _scanTask;
     private bool _closed, _changingView, _exiting, _restoring = true;
     private int _skipped;
     public bool IsFileOperationRunning { get; private set; }
@@ -68,9 +73,15 @@ public sealed class SessionBrowserWindow : Window
         var footer = new StackPanel(); footer.Children.Add(_status); footer.Children.Add(_summary); DockPanel.SetDock(footer, Dock.Bottom); panel.Children.Add(footer);
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); panel.Children.Add(top);
         var title = new TextBlock { FontSize = 28, FontWeight = FontWeights.SemiBold };
-        Translate(() => title.Text = L("Codex 會話", "Codex Sessions")); top.Children.Add(title);
+        var heading = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+        var logo = new BitmapImage(); logo.BeginInit(); logo.UriSource = new Uri("pack://application:,,,/CodexEzMate;component/Assets/CodexUsageAssistant-preview.png");
+        logo.DecodePixelWidth = 144; logo.CacheOption = BitmapCacheOption.OnLoad; logo.EndInit(); logo.Freeze();
+        var brandImage = new System.Windows.Controls.Image { Source = logo, Width = 72, Height = 72, Margin = new Thickness(0, 0, 14, 0) };
+        RenderOptions.SetBitmapScalingMode(brandImage, BitmapScalingMode.HighQuality); DockPanel.SetDock(brandImage, Dock.Left); heading.Children.Add(brandImage);
+        var headingText = new StackPanel { VerticalAlignment = VerticalAlignment.Center }; heading.Children.Add(headingText); top.Children.Add(heading);
+        Translate(() => title.Text = L("Codex 會話", "Codex Sessions")); headingText.Children.Add(title);
         var help = new TextBlock { Margin = new Thickness(0, 8, 0, 16) };
-        Translate(() => help.Text = L("瀏覽、備份及管理本機對話", "Browse, back up and manage your local conversations")); top.Children.Add(help);
+        Translate(() => help.Text = L("瀏覽、備份及管理本機對話", "Browse, back up and manage your local conversations")); headingText.Children.Add(help);
         var filters = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
         var searchLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         Translate(() => searchLabel.Text = L("搜尋", "Search")); filters.Children.Add(searchLabel);
@@ -95,7 +106,19 @@ public sealed class SessionBrowserWindow : Window
         var split = new Grid(); split.RowDefinitions.Add(new() { Height = new GridLength(3, GridUnitType.Star) }); split.RowDefinitions.Add(new() { Height = new GridLength(6) }); split.RowDefinitions.Add(new() { Height = new GridLength(2, GridUnitType.Star) });
         split.Children.Add(_grid);
         var divider = new GridSplitter { Height = 6, HorizontalAlignment = HorizontalAlignment.Stretch, ResizeDirection = GridResizeDirection.Rows }; Grid.SetRow(divider, 1); split.Children.Add(divider);
-        var previewPanel = new DockPanel(); DockPanel.SetDock(_previewTitle, Dock.Top); previewPanel.Children.Add(_previewTitle); previewPanel.Children.Add(_preview); Grid.SetRow(previewPanel, 2); split.Children.Add(previewPanel); panel.Children.Add(split);
+        var previewPanel = new DockPanel(); DockPanel.SetDock(_previewTitle, Dock.Top); previewPanel.Children.Add(_previewTitle);
+        var pageBar = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
+        Label(_previousPage, "上一頁", "Previous page"); Label(_nextPage, "下一頁", "Next page"); Label(_copyPage, "複製當頁", "Copy page");
+        Translate(() => _pageLabel.Text = L("頁", "Page") + " " + (_previousCursors.Count + 1));
+        pageBar.Children.Add(_previousPage); pageBar.Children.Add(_pageLabel); pageBar.Children.Add(_nextPage); pageBar.Children.Add(_copyPage);
+        DockPanel.SetDock(pageBar, Dock.Top); previewPanel.Children.Add(pageBar); previewPanel.Children.Add(_preview); Grid.SetRow(previewPanel, 2); split.Children.Add(previewPanel); panel.Children.Add(split);
+        _previousPage.Click += async (_, _) => { if (_previousCursors.Count == 0) return; _previewCursor = _previousCursors.Pop(); await PreviewAsync(true); };
+        _nextPage.Click += async (_, _) => { if (_nextCursor is null) return; _previousCursors.Push(_previewCursor); _previewCursor = _nextCursor; await PreviewAsync(true); };
+        _copyPage.Click += (_, _) =>
+        {
+            try { if (_preview.Text.Length > 0) System.Windows.Clipboard.SetText(_preview.Text); }
+            catch (System.Runtime.InteropServices.ExternalException) { _status.Text = L("剪貼簿忙碌，請稍後再試。", "Clipboard is busy; try again shortly."); }
+        };
         Content = panel;
         Column("updated", "更新時間", "Updated", nameof(BrowserSession.Updated), 150, "yyyy-MM-dd HH:mm:ss");
         Column("status", "狀態", "Status", nameof(BrowserSession.Status), 115);
@@ -123,6 +146,10 @@ public sealed class SessionBrowserWindow : Window
         {
             if (IsFileOperationRunning) { e.Cancel = true; ShowBusy(); return; }
             SaveSettings(); _closed = true; _searchTimer.Stop(); _scanCts?.Cancel(); _previewCts?.Cancel();
+            _preview.Clear(); _grid.ItemsSource = null; _view = null; _sessions = []; _previousCursors.Clear();
+            _previewCursor = _nextCursor = null;
+            // Cleanup runs after cancelled readers release their short-lived locks.
+            _ = Task.Run(_store.ClearCaches);
             LocalizationService.LanguageChanged -= SetLanguage;
         };
         LocalizationService.LanguageChanged += SetLanguage;
@@ -141,7 +168,7 @@ public sealed class SessionBrowserWindow : Window
     }
     internal void SetLanguage(AppLanguage language)
     {
-        _language = language; Title = "Codex EzMate v1.21.3 — " + L("會話瀏覽器", "Session Browser");
+        _language = language; Title = "Codex EzMate v1.21.4 — " + L("會話瀏覽器", "Session Browser");
         foreach (var session in _sessions) session.SetLanguage(language);
         foreach (var translate in _translations) translate();
         var restoring = _restoring; _restoring = true;
@@ -187,7 +214,13 @@ public sealed class SessionBrowserWindow : Window
         _view.SortDescriptions.Clear(); _view.SortDescriptions.Add(new(column.SortMemberPath, direction));
         foreach (var other in _columns.Values) other.SortDirection = null; column.SortDirection = direction;
     }
-    private async Task RefreshAsync()
+    private Task RefreshAsync()
+    {
+        if (_closed || IsFileOperationRunning) return Task.CompletedTask;
+        if (_scanTask is { IsCompleted: false } && _scanCts?.IsCancellationRequested == false) return _scanTask;
+        return _scanTask = RefreshCoreAsync();
+    }
+    private async Task RefreshCoreAsync()
     {
         if (_closed || IsFileOperationRunning) return;
         _scanCts?.Cancel(); var cts = new CancellationTokenSource(); _scanCts = cts;
@@ -204,20 +237,25 @@ public sealed class SessionBrowserWindow : Window
         finally { if (ReferenceEquals(_scanCts, cts)) _scanCts = null; cts.Dispose(); }
     }
     private void UpdatePreviewTitle() => _previewTitle.Text = L("對話預覽", "Conversation preview") + (_grid.SelectedItem is BrowserSession session ? $" — {session.DisplayName}   [{session.Id}]" : "");
-    internal async Task PreviewAsync()
+    internal async Task PreviewAsync(bool keepPage = false)
     {
         _previewCts?.Cancel(); UpdatePreviewTitle();
+        if (!keepPage) { _previewCursor = _nextCursor = null; _previousCursors.Clear(); }
+        _previousPage.IsEnabled = _nextPage.IsEnabled = _copyPage.IsEnabled = false;
         if (_grid.SelectedItem is not BrowserSession session) { _preview.Clear(); return; }
         var cts = new CancellationTokenSource(); _previewCts = cts;
+        var cursor = _previewCursor;
         _preview.Text = L("讀取中…", "Loading…");
         try
         {
-            var result = await Task.Run(() => _store.ReadPreview(session, cts.Token), cts.Token);
+            var result = await Task.Run(() => _store.ReadPreviewPage(session, cursor, cts.Token), cts.Token);
             if (_closed || cts.IsCancellationRequested) return;
-            var text = new StringBuilder();
-            foreach (var message in result.Messages) text.AppendLine($"{message.Role.ToUpperInvariant()}  {message.Timestamp}").AppendLine(message.Text).AppendLine();
-            if (result.Truncated) text.AppendLine(L("預覽已截斷；可開啟 JSONL 查看完整記錄。", "Preview truncated. Open JSONL for the full record."));
-            _preview.Text = text.Length == 0 ? L("沒有可預覽的對話訊息", "No conversation messages to preview") : text.ToString(); _preview.ScrollToHome();
+            if (result.Reloaded) { _previewCursor = null; _previousCursors.Clear(); _status.Text = L("對話已更新，已重新載入首頁。", "Conversation changed; reloaded the first page."); }
+            _nextCursor = result.Next;
+            _preview.Text = result.Text.Length == 0 ? L("沒有可預覽的對話訊息", "No conversation messages to preview") : result.Text; _preview.ScrollToHome();
+            _pageLabel.Text = L("頁", "Page") + " " + (_previousCursors.Count + 1);
+            _previousPage.IsEnabled = _previousCursors.Count > 0; _nextPage.IsEnabled = result.Next is not null; _copyPage.IsEnabled = result.Text.Length > 0;
+            if (result.Truncated) _status.Text = L("預覽已截斷；可開啟 JSONL 查看完整記錄。", "Preview truncated. Open JSONL for the full record.");
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { if (!_closed && !cts.IsCancellationRequested) _preview.Text = ex.Message; }

@@ -9,6 +9,15 @@ namespace CodexUsageAssistant.Services;
 
 public sealed class AppServerUsageService : IAppServerUsageReader
 {
+    private readonly UsageAppServerSession _session;
+    public AppServerUsageService(UsageAppServerSession? session = null) => _session = session ?? UsageAppServerSession.Shared;
+    internal async Task<UsageData> ReadAfterSignInAsync(string? path, CancellationToken token)
+    {
+        // A fresh auth read must not depend on a long-lived process's previous account state.
+        await _session.InvalidateAsync(token).ConfigureAwait(false);
+        await using var fresh = _session.CreateFresh();
+        return await new AppServerUsageService(fresh).ReadAsync(path, token).ConfigureAwait(false);
+    }
     public async Task<UsageData> ReadAsync(string? executablePath, CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -16,8 +25,8 @@ public sealed class AppServerUsageService : IAppServerUsageReader
         var token = timeout.Token;
         try
         {
-            await using var client = await AppServerClient.ConnectAsync(executablePath, token);
-            var usage = ParseRateLimits(await client.RequestAsync("account/rateLimits/read", null, token), DateTimeOffset.Now);
+            var client = _session;
+            var usage = ParseRateLimits(await client.RequestAsync(executablePath, "account/rateLimits/read", null, token), DateTimeOffset.Now);
             if (usage.Status == UsageStatus.Available)
             {
                 if (string.IsNullOrWhiteSpace(usage.PlanType))
@@ -26,7 +35,7 @@ public sealed class AppServerUsageService : IAppServerUsageReader
                     {
                         using var planTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
                         planTimeout.CancelAfter(TimeSpan.FromSeconds(5));
-                        var account = await client.RequestAsync("account/read", new { refreshToken = false }, planTimeout.Token);
+                        var account = await client.RequestAsync(executablePath, "account/read", new { refreshToken = false }, planTimeout.Token);
                         usage.PlanType = Property(Property(account, "account"), "planType").ValueKind == JsonValueKind.String
                             ? Property(Property(account, "account"), "planType").GetString() : null;
                     }
@@ -37,7 +46,7 @@ public sealed class AppServerUsageService : IAppServerUsageReader
                 tokenTimeout.CancelAfter(TimeSpan.FromSeconds(8));
                 try
                 {
-                    var activity = await client.RequestAsync("account/usage/read", null, tokenTimeout.Token);
+                    var activity = await client.RequestAsync(executablePath, "account/usage/read", null, tokenTimeout.Token);
                     ApplyTokenUsage(usage, activity, DateTimeOffset.Now);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }

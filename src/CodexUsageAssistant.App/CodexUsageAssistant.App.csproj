@@ -13,13 +13,14 @@
     <Title>Codex EzMate</Title>
     <Description>Codex EzMate desktop usage and App Server companion</Description>
     <RootNamespace>CodexUsageAssistant</RootNamespace>
-    <Version>1.21.3</Version>
+    <Version>1.21.4</Version>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\CodexEzMate.UpdateCore\CodexEzMate.UpdateCore.csproj" />
     <Content Include="assets\fluent\LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="Assets\CodexUsageAssistant.ico" />
+    <Resource Include="Assets\CodexUsageAssistant-preview.png" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="FlaUI.Core" Version="5.0.0" />
     <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />

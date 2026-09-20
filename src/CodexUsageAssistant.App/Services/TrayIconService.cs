@@ -45,7 +45,7 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
         _icon = new Forms.NotifyIcon
         {
             Icon = _appIcon,
-            Text = "Codex EzMate v1.21.3",
+            Text = "Codex EzMate v1.21.4",
             Visible = false
         };
         BuildMenu();
@@ -242,7 +242,7 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
         }
         var usage = $"5h {_viewModel.FiveHourPercent} · W {_viewModel.WeeklyPercent}";
         var reset = $"{T("可用 reset", "Available resets")}：{_viewModel.AvailableUsageResetDisplay}";
-        _icon.Text = TruncateTooltip($"Codex EzMate v1.21.3 | {usage}");
+        _icon.Text = TruncateTooltip($"Codex EzMate v1.21.4 | {usage}");
         if (_usageItem is not null) _usageItem.Text = usage;
         if (_resetItem is not null) _resetItem.Text = reset;
     }

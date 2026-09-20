@@ -20,6 +20,10 @@ public partial class LoginWindow : Window
     private int _autoReadStarted;
     private bool _closed;
     private bool _reading;
+    private readonly CancellationTokenSource _windowLifetime = new();
+    private EventHandler<CoreWebView2BasicAuthenticationRequestedEventArgs>? _authenticationHandler;
+    private EventHandler<CoreWebView2NavigationCompletedEventArgs>? _navigationHandler;
+    internal bool BrowserDisposed { get; private set; }
 
     public LoginWindow(string? proxyServer = null, string? proxyBypassList = null,
         string? proxyUsername = null, string? proxyPassword = null)
@@ -29,6 +33,7 @@ public partial class LoginWindow : Window
         _proxyUsername = proxyUsername;
         _proxyPassword = proxyPassword;
         InitializeComponent();
+        Closed += OnClosed;
     }
 
     public async Task<UsageData?> ShowAndReadAsync(CancellationToken cancellationToken, bool autoRead)
@@ -49,33 +54,37 @@ public partial class LoginWindow : Window
             Topmost = false;
         }
         _completion = new TaskCompletionSource<UsageData?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var registration = cancellationToken.Register(() => Dispatcher.Invoke(Close));
+        using var registration = cancellationToken.Register(() => { if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(new Action(() => { if (!_closed) Close(); })); });
+        cancellationToken.ThrowIfCancellationRequested();
         Loaded += OnLoaded;
-        Closed += (_, _) => { _closed = true; _completion.TrySetResult(null); };
         Show();
         return await _completion.Task;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        if (_closed) return;
         try
         {
             var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "CodexUsageAssistant", "WebView2");
             var options = CreateEnvironmentOptions(_proxyServer, _proxyBypassList);
             var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: profile, options: options);
+            if (_closed) return;
             await Browser.EnsureCoreWebView2Async(environment);
+            if (_closed) return;
             Browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
             Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
-            Browser.CoreWebView2.BasicAuthenticationRequested += (_, args) =>
+            _authenticationHandler = (_, args) =>
             {
                 if (string.IsNullOrWhiteSpace(_proxyUsername) || string.IsNullOrEmpty(_proxyPassword) ||
                     !IsProxyAuthenticationUri(args.Uri, _proxyServer)) return;
                 args.Response.UserName = _proxyUsername;
                 args.Response.Password = _proxyPassword;
             };
-            Browser.CoreWebView2.NavigationCompleted += async (_, args) =>
+            _navigationHandler = async (_, args) =>
             {
+                if (_closed) return;
                 StatusText.Text = args.IsSuccess
                     ? L("頁面已載入；確認看到 Weekly usage limit 後，按『讀取當前頁用量』。",
                         "Page loaded. When Weekly usage limit is visible, select Read current page usage.")
@@ -84,11 +93,36 @@ public partial class LoginWindow : Window
                     Interlocked.Exchange(ref _autoReadStarted, 1) == 0)
                     await ReadUsageWithRetriesAsync();
             };
+            Browser.CoreWebView2.BasicAuthenticationRequested += _authenticationHandler;
+            Browser.CoreWebView2.NavigationCompleted += _navigationHandler;
             NavigateToUsagePage();
         }
         catch (Exception ex)
         {
+            if (_closed) return;
             StatusText.Text = $"{L("WebView2 初始化失敗", "WebView2 initialization failed")}：{ex.Message}";
+            if (_autoRead) { _completion?.TrySetResult(new UsageData { Status = UsageStatus.NetworkError, ErrorMessage = StatusText.Text }); Close(); }
+        }
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        _closed = true; _windowLifetime.Cancel(); Loaded -= OnLoaded;
+        try
+        {
+            if (Browser.CoreWebView2 is { } core)
+            {
+                if (_authenticationHandler is not null) core.BasicAuthenticationRequested -= _authenticationHandler;
+                if (_navigationHandler is not null) core.NavigationCompleted -= _navigationHandler;
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { }
+        finally
+        {
+            _authenticationHandler = null; _navigationHandler = null;
+            try { if (!BrowserDisposed) Browser.Dispose(); }
+            catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { }
+            finally { BrowserDisposed = true; _completion?.TrySetResult(null); }
         }
     }
 
@@ -140,6 +174,7 @@ public partial class LoginWindow : Window
     {
         if (_reading || _closed) return;
         _reading = true;
+        var token = _windowLifetime.Token;
         try
         {
         UsageData? lastResult = null;
@@ -147,7 +182,7 @@ public partial class LoginWindow : Window
         string? previousSnapshot = null;
         for (var attempt = 0; attempt < 15; attempt++)
         {
-            await Task.Delay(TimeSpan.FromSeconds(1));
+            await Task.Delay(TimeSpan.FromSeconds(1), token);
             if (_closed) return;
             lastResult = await ReadUsageOnceAsync();
             if (lastResult?.Status != UsageStatus.Available) continue;
@@ -166,6 +201,7 @@ public partial class LoginWindow : Window
             ErrorMessage = L("背景更新逾時。", "Background update timed out.") });
         Close();
         }
+        catch (OperationCanceledException) when (_closed) { }
         finally { _reading = false; }
     }
 

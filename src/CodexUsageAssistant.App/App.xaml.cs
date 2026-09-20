@@ -28,6 +28,7 @@ public partial class App : System.Windows.Application
         collection.AddSingleton<ISettingsService, JsonSettingsService>();
         collection.AddSingleton<AppUpdateService>();
         collection.AddSingleton<CodexAppServerHost>();
+        collection.AddSingleton<UsageAppServerSession>();
         collection.AddSingleton<WebView2UsageLoginService>();
         collection.AddSingleton<IAppServerUsageReader, AppServerUsageService>();
         collection.AddSingleton<IUsageLoginService>(provider => new UsageSourceService(

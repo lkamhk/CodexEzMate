@@ -1,52 +1,69 @@
 using System.IO;
-using System.Text;
 using System.Text.Json;
 
 namespace CodexUsageAssistant.Services;
 
 internal sealed record GoalLocalObservation(bool HasLifecycle, bool IsBusy, bool RequestSeen, string? TurnId, string? GoalStatus)
 {
-    internal static async Task<GoalLocalObservation> ReadAsync(string path, string threadId, string? requestId, string? fingerprint, CancellationToken token)
+    private static readonly object Gate = new();
+    private static readonly Dictionary<string, Cursor> Cursors = new(StringComparer.Ordinal);
+    private sealed class Cursor
     {
-        // Only read the rollout returned for this thread. Never write Codex state.
+        internal IncrementalJsonlReader Reader = new(2 * 1024 * 1024);
+        internal string? ActiveTurn, RequestTurn, Terminal;
+        internal bool Lifecycle, Seen;
+        internal HashSet<string> GoalCalls = [];
+        internal void Reset() { ActiveTurn = RequestTurn = Terminal = null; Lifecycle = Seen = false; GoalCalls.Clear(); }
+    }
+    internal static void Forget(string path)
+    {
+        lock (Gate)
+            foreach (var key in Cursors.Keys.Where(k => k.StartsWith(path + "\0", StringComparison.Ordinal)).ToArray()) Cursors.Remove(key);
+    }
+    internal static Task<GoalLocalObservation> ReadAsync(string path, string threadId, string? requestId, string? fingerprint, CancellationToken token) =>
+        Task.Run(() => Read(path, threadId, requestId, fingerprint, token), token);
+
+    private static GoalLocalObservation Read(string path, string threadId, string? requestId, string? fingerprint, CancellationToken token)
+    {
         if (!Path.IsPathFullyQualified(path) || !Path.GetFileName(path).Contains(threadId, StringComparison.OrdinalIgnoreCase) ||
             !path.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Invalid rollout path.");
-        await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 65536, true);
-        var offset = Math.Max(0, file.Length - 2 * 1024 * 1024);
-        file.Seek(offset, SeekOrigin.Begin);
-        using var reader = new StreamReader(file, Encoding.UTF8);
-        if (offset > 0) await reader.ReadLineAsync(token).ConfigureAwait(false);
-        string? activeTurn = null, requestTurn = null, terminal = null;
-        var lifecycle = false; var seen = false;
-        var goalCalls = new HashSet<string>();
-        while (await reader.ReadLineAsync(token).ConfigureAwait(false) is { } line)
+        lock (Gate)
         {
-            try
+            var key = path + "\0" + requestId + "\0" + fingerprint;
+            if (!Cursors.TryGetValue(key, out var state))
             {
-                using var document = JsonDocument.Parse(line);
-                var root = document.RootElement; var payload = GoalProtocol.Property(root, "payload");
+                if (Cursors.Count >= 32) Cursors.Remove(Cursors.Keys.First());
+                Cursors[key] = state = new();
+            }
+            state.Reader.Read(path, (root, _, _) =>
+            {
+                var payload = GoalProtocol.Property(root, "payload");
                 var type = GoalProtocol.Text(payload, "type");
                 if (GoalProtocol.Text(root, "type") == "event_msg")
                 {
-                    if (type == "task_started") { activeTurn = GoalProtocol.Text(payload, "turn_id"); lifecycle = activeTurn is not null; }
-                    if (type == "task_complete" && (activeTurn is null || GoalProtocol.Text(payload, "turn_id") == activeTurn))
-                    { activeTurn = null; lifecycle = true; }
+                    if (type == "task_started") { state.ActiveTurn = GoalProtocol.Text(payload, "turn_id"); state.Lifecycle = state.ActiveTurn is not null; }
+                    if (type == "task_complete" && (state.ActiveTurn is null || GoalProtocol.Text(payload, "turn_id") == state.ActiveTurn))
+                    { state.ActiveTurn = null; state.Lifecycle = true; }
                 }
                 if (type == "message" && GoalProtocol.Text(payload, "role") == "user" && requestId is not null)
                 {
                     var content = GoalProtocol.Property(payload, "content");
                     if (content.ValueKind == JsonValueKind.Array && content.EnumerateArray().Any(x =>
                         GoalProtocol.Text(x, "text")?.StartsWith($"[Codex EzMate {requestId}]\n", StringComparison.Ordinal) == true))
-                    { seen = true; requestTurn = GoalProtocol.Text(GoalProtocol.Property(payload, "internal_chat_message_metadata_passthrough"), "turn_id"); }
+                    { state.Seen = true; state.RequestTurn = GoalProtocol.Text(GoalProtocol.Property(payload, "internal_chat_message_metadata_passthrough"), "turn_id"); }
                 }
                 if (type is "custom_tool_call" or "function_call")
                 {
                     var input = GoalProtocol.Text(payload, "input") ?? "";
                     if (GoalProtocol.Text(payload, "name") == "update_goal" || input.Contains("tools.update_goal(", StringComparison.Ordinal))
-                        if (GoalProtocol.Text(payload, "call_id") is { } call) goalCalls.Add(call);
+                        if (GoalProtocol.Text(payload, "call_id") is { } call)
+                        {
+                            if (state.GoalCalls.Count >= 256) state.GoalCalls.Remove(state.GoalCalls.First());
+                            state.GoalCalls.Add(call);
+                        }
                 }
                 if (type is "custom_tool_call_output" or "function_call_output" && fingerprint is not null &&
-                    GoalProtocol.Text(payload, "call_id") is { } outputCall && goalCalls.Contains(outputCall))
+                    GoalProtocol.Text(payload, "call_id") is { } outputCall && state.GoalCalls.Remove(outputCall))
                 {
                     var output = GoalProtocol.Property(payload, "output");
                     IEnumerable<string?> texts = output.ValueKind == JsonValueKind.String ? [output.GetString()] :
@@ -56,13 +73,12 @@ internal sealed record GoalLocalObservation(bool HasLifecycle, bool IsBusy, bool
                         {
                             using var result = JsonDocument.Parse(text!); var goal = GoalProtocol.Property(result.RootElement, "goal");
                             if (GoalProtocol.Text(goal, "threadId") == threadId && GoalProtocol.GoalFingerprint(goal) == fingerprint)
-                                terminal = GoalProtocol.Text(goal, "status");
+                                state.Terminal = GoalProtocol.Text(goal, "status");
                         }
                         catch (JsonException) { }
                 }
-            }
-            catch (JsonException) { /* A concurrently appended line may be incomplete. */ }
+            }, state.Reset, token);
+            return new(state.Lifecycle, state.ActiveTurn is not null, state.Seen, state.RequestTurn ?? state.ActiveTurn, state.Terminal);
         }
-        return new(lifecycle, activeTurn is not null, seen, requestTurn ?? activeTurn, terminal);
     }
 }

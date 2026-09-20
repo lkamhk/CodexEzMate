@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/CodexUsageAssistant.App/Assets/CodexUsageAssistant-preview.png" alt="Codex EzMate icon" width="96" height="96">
+  <img src="assets/branding/codex-ezmate-logo-mate.png" alt="Codex EzMate logo" width="180" height="180">
 </p>
 
 # Codex EzMate
@@ -8,7 +8,7 @@
 
 Windows 上的 Codex 常駐助手：查看剩餘用量、管理本機會話及代管 App Server。
 
-**目前原始碼版本：1.21.3** · Windows x64 · .NET 8 / WPF · 繁體中文／簡體中文／English
+**目前原始碼版本：1.21.4** · Windows x64 · .NET 8 / WPF · 繁體中文／簡體中文／English
 
 [下載版本](https://github.com/lkamhk/CodexEzMate/releases) · [回報問題](https://github.com/lkamhk/CodexEzMate/issues)
 
@@ -17,6 +17,10 @@ Windows 上的 Codex 常駐助手：查看剩餘用量、管理本機會話及�
 > **Goal 監控現已開放測試使用，歡迎回饋！** 此功能會向原對話發送自動續跑訊息，處理訊息及後續執行會消耗 token 和 Codex 用量額度。請先以非重要工作測試；真正額度耗盡後的恢復仍待實測。
 
 本專案為第三方工具，並非 OpenAI 官方產品。
+
+<p align="center">
+  <img src="assets/branding/codex-ezmate-promo.png" alt="Codex EzMate — Make It Simple" width="640">
+</p>
 
 ## 介面預覽
 
@@ -39,6 +43,16 @@ Windows 上的 Codex 常駐助手：查看剩餘用量、管理本機會話及�
 | Server 代管 | 背景啟動或重用本機 Codex App Server，提供登入、連線狀態、重新啟動及意外退出後恢復。 |
 | 全域快捷鍵 | 自訂快捷鍵開啟 Session Browser、Goal 監控、Server 代管、詳細用量及設定等視窗。 |
 | 用量更新與偏好設定 | 支援定時／事件觸發重新整理用量、Proxy 及三語介面；用量重新整理與程式升版是不同功能。 |
+
+## 1.21.4 記憶體優化
+
+- Session Browser 改用每頁最多 64K 字元的分頁預覽，快取設有上限。
+- Token 統計及 Goal 觀察只讀取新增記錄，減少反覆掃描整份檔案。
+- 用量讀取與通知共用連線，設定相符時可重用 EzMate 持有的 App Server。
+- 關閉視窗時明確釋放資源；程式不會定時強制 GC 或清空 working set。
+- 同時換上新程式圖示、大圖用的「mate」Logo 及宣傳圖片。
+
+固定假對話資料、20 次 Session Browser 開關的開發測試中，相較 1.21.3，主程序 working set 峰值由 **302.7 降至 203.8 MiB**，private bytes 峰值由 **228.7 降至 127.1 MiB**。這是受控 Debug／WPF 測試結果，不保證每部電腦都有相同數值；啟用功能、對話大小及子程序都會影響實際用量。
 
 ## 安裝與首次使用
 
@@ -82,7 +96,7 @@ Token 圖表顯示最近的每日記錄；官方資料未包含今日時，可�
 
 介面語言即時跟隨主程式，更改語言不會改寫會話名稱或訊息。重複開啟會喚回同一個 WPF 視窗。備份／移至回收區／還原期間會阻止關閉瀏覽器及退出 EzMate；可先取消剩餘操作，等目前檔案安全處理完畢後退出。退出 EzMate 時會一併關閉瀏覽器。
 
-預覽有大小及訊息數上限，完整內容可使用「開啟 JSONL」查看。
+預覽採分頁載入，每頁最多 64K 字元，提供「上一頁」、「下一頁」及「複製當頁」，只快取當頁及相鄰頁。預覽仍有大小及訊息數上限，完整內容可使用「開啟 JSONL」查看。
 
 ### Goal 監控
 

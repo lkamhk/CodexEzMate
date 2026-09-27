@@ -14,6 +14,10 @@ public partial class FloatingBallViewModel : ObservableObject
     public event Action<AppLanguage>? LanguageChanged;
     public event Action<bool>? TrayUsageIconChanged;
     public event Action? HotkeySettingsRequested;
+    public event Action? ResetWatchRequested;
+
+    [RelayCommand]
+    private void OpenResetWatch() => ResetWatchRequested?.Invoke();
 
     [RelayCommand]
     private void OpenHotkeySettings() => HotkeySettingsRequested?.Invoke();
@@ -33,12 +37,18 @@ public partial class FloatingBallViewModel : ObservableObject
     private readonly CodexAppServerHost? _host;
     private UsageData? _lastUsage;
     private readonly CancellationTokenSource _backgroundRefreshCts = new();
+    private int _externalUsageRefreshRequested;
+    // Announcements only request a read; existing account checks still own execution decisions.
+    public void RequestUsageRefresh() => Interlocked.Exchange(ref _externalUsageRefreshRequested, 1);
     [ObservableProperty] private bool _isExpanded;
     [ObservableProperty] private bool _showDomLoginMenu;
     [ObservableProperty] private string _fiveHourPercent = "—";
     [ObservableProperty] private string _weeklyPercent = "—";
     [ObservableProperty] private string _primaryLimitLabel = "5h";
     [ObservableProperty] private string _primaryLimitPercent = "—";
+    [ObservableProperty] private double _primaryLimitValue = double.NaN;
+    private readonly ResetIncreaseTracker _resetIncrease = new();
+    public event Action<int, int>? ResetsAdded;
     [ObservableProperty] private double _fiveHourValue;
     [ObservableProperty] private double _weeklyValue;
     [ObservableProperty] private string _lastUpdated = DateTime.Now.ToString("HH:mm");
@@ -71,7 +81,7 @@ public partial class FloatingBallViewModel : ObservableObject
     internal static string GetResetAvailabilityHint(UsageData? usage, bool busy) => busy
         ? LocalizationService.Pick("正在使用 reset，請稍候。", "A reset is in progress.")
         : usage?.DataSource != "App Server"
-            ? LocalizationService.Pick("使用 reset 需要 App Server；目前為 DOM／快取資料，請檢查資料來源及 Proxy 後重新整理。", "Using reset requires App Server. Current data is DOM/cached; check data source and proxy, then refresh.")
+            ? LocalizationService.Pick("使用 reset 需要連接本機 Codex；目前顯示網站或先前儲存的用量，請檢查帳戶連線及網絡設定後重新整理。", "Using reset requires a local Codex connection. Current usage comes from the website or saved data; check your account connection and network settings, then refresh.")
             : usage.AvailableUsageResetCount > 0
                 ? LocalizationService.Pick("使用明細中最快到期的可用 reset。", "Use the earliest-expiring available reset in the returned details.")
                 : LocalizationService.Pick("App Server 未提供可用 reset。", "App Server has not provided any available resets.");
@@ -199,7 +209,7 @@ public partial class FloatingBallViewModel : ObservableObject
             ApplyUsage(cached);
             StatusMessage = $"{L("快取資料", "Cached data")}：5h {FiveHourPercent} · W {WeeklyPercent}";
         }
-        _autoResumeScheduler.UsageUpdated += usage => System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() => ApplyUsage(usage)));
+        _autoResumeScheduler.UsageUpdated += usage => System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() => ApplyFreshUsage(usage)));
         _autoResumeScheduler.StatusChanged += (_, _) => System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() => StatusMessage = _autoResumeScheduler.Status));
         await _autoResumeScheduler.InitializeAsync(CancellationToken.None);
         _ = RunBackgroundRefreshAsync(_backgroundRefreshCts.Token);
@@ -222,6 +232,7 @@ public partial class FloatingBallViewModel : ObservableObject
     [RelayCommand]
     private async Task LoginAsync(CancellationToken cancellationToken)
     {
+        _resetIncrease.Reset();
         try { await ReadAndApplyUsageAsync(cancellationToken, L("等待登入／讀取…", "Waiting for sign-in / usage…")); }
         catch (OperationCanceledException) { StatusMessage = L("登入已取消。", "Sign-in cancelled."); }
         catch (Exception ex) when (CodexAppServerHost.IsExpected(ex))
@@ -291,6 +302,7 @@ public partial class FloatingBallViewModel : ObservableObject
                 var startupRefresh = firstCheck && settings.UsageReadMode != UsageReadMode.DomOnly;
                 firstCheck = false;
                 var notified = notifications.TakeChange(DateTimeOffset.Now);
+                var requested = Interlocked.Exchange(ref _externalUsageRefreshRequested, 0) != 0;
                 if (notified) _autoResumeScheduler.RequestCheck();
                 var day = DateOnly.FromDateTime(DateTime.Now);
                 var dayChanged = day != observedDay;
@@ -302,10 +314,10 @@ public partial class FloatingBallViewModel : ObservableObject
                     nextRefreshAt = interval is { } changed ? DateTimeOffset.Now.Add(changed) : null;
                 }
                 var timed = interval is not null && nextRefreshAt is not null && DateTimeOffset.Now >= nextRefreshAt;
-                if (!timed && !notified && !startupRefresh && !(dayChanged && settings.RefreshOnServerNotification)) continue;
+                if (!timed && !notified && !requested && !startupRefresh && !(dayChanged && settings.RefreshOnServerNotification)) continue;
 
                 var autoSettings = await _autoResumeSettings.LoadAsync(cancellationToken);
-                if (!autoSettings.MonitorEnabled || notified || dayChanged || startupRefresh)
+                if (!autoSettings.MonitorEnabled || notified || requested || dayChanged || startupRefresh)
                 {
                     try { await RefreshInBackgroundAsync(cancellationToken, L("背景更新中…", "Updating in background…")); }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -324,8 +336,10 @@ public partial class FloatingBallViewModel : ObservableObject
 
     internal void ApplyFreshUsage(UsageData usage)
     {
+        var added = _resetIncrease.Observe(usage);
         var recovered = GoalProtocol.UsageAllowsResume(usage) && (_lastUsage is null || !GoalProtocol.UsageAllowsResume(_lastUsage));
         ApplyUsage(usage);
+        if (added > 0) ResetsAdded?.Invoke(added, usage.AvailableUsageResetCount!.Value);
         // Wake the monitor, which independently rechecks its own App Server account.
         if (recovered) _autoResumeScheduler?.RequestCheck();
     }
@@ -343,7 +357,9 @@ public partial class FloatingBallViewModel : ObservableObject
         CreditAvailableDisplay = usage.HasCredits is bool available ? (available ? L("有", "Yes") : L("沒有", "No")) : "—";
         CreditUnlimitedDisplay = usage.UnlimitedCredits is bool unlimited ? (unlimited ? L("是", "Yes") : L("否", "No")) : "—";
         StreakDisplay = usage.CurrentStreakDays is long days ? L($"{days} 天", $"{days} {(days == 1 ? "day" : "days")}") : "—";
-        DataSourceDisplay = usage.DataSource ?? "DOM";
+        DataSourceDisplay = usage.DataSource?.StartsWith("App Server", StringComparison.OrdinalIgnoreCase) == true
+            ? LocalizationService.Pick("本機 Codex 帳戶", "Local Codex account")
+            : LocalizationService.Pick("網站帳戶用量", "Website account usage");
         _lastUsage = usage;
         if (usage.FiveHourRemainingPercent is double five) { FiveHourValue = five; FiveHourPercent = $"{five:0.#}%"; }
         else { FiveHourValue = 0; FiveHourPercent = "—"; }
@@ -353,16 +369,19 @@ public partial class FloatingBallViewModel : ObservableObject
         {
             PrimaryLimitLabel = "5h";
             PrimaryLimitPercent = FiveHourPercent;
+            PrimaryLimitValue = FiveHourValue;
         }
         else if (usage.WeeklyRemainingPercent.HasValue)
         {
             PrimaryLimitLabel = "W";
             PrimaryLimitPercent = WeeklyPercent;
+            PrimaryLimitValue = WeeklyValue;
         }
         else
         {
             PrimaryLimitLabel = "—";
             PrimaryLimitPercent = "—";
+            PrimaryLimitValue = double.NaN;
         }
         FiveHourResetDisplay = FormatReset(usage.FiveHourResetText, usage.FiveHourResetAt);
         WeeklyResetDisplay = FormatReset(usage.WeeklyResetText, usage.WeeklyResetAt);

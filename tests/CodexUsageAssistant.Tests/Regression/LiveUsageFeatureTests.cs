@@ -112,8 +112,8 @@ public sealed class LiveUsageFeatureTests
     public void ResetHint_ExplainsDomFallbackInsteadOfImplyingZeroResets()
     {
         var hint = FloatingBallViewModel.GetResetAvailabilityHint(new UsageData { DataSource = "DOM (App Server fallback)", AvailableUsageResetCount = 3 }, false);
-        Assert.Contains("App Server", hint);
-        Assert.Contains("Proxy", hint, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Codex", hint);
+        Assert.DoesNotContain("DOM", hint);
     }
     [Fact]
     public async Task LiveNotificationConnection_WhenEnabled_CancelsCleanly()

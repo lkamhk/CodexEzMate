@@ -35,6 +35,46 @@ public sealed class SessionBrowserTests(Xunit.Abstractions.ITestOutputHelper out
             Assert.Equal("备份", LocalizationService.ToSimplified("備份"));
         }
     }
+
+    [Fact]
+    public void RecycleOnlyAcceptsTrashAndIncludesRestoreMetadata()
+    {
+        using var fixture = new Fixture();
+        var session = fixture.Session();
+        IReadOnlyList<string>? recycled = null;
+        fixture.Store.RecycleFiles = paths => recycled = paths.ToArray();
+        Assert.Throws<IOException>(() => fixture.Store.Apply(session, BrowserFileAction.Recycle, default));
+        Assert.Null(recycled);
+        var trashedPath = fixture.Store.Apply(session, BrowserFileAction.Trash, default);
+        var trashed = new BrowserSession { Path = trashedPath, Id = session.Id, Deleted = true };
+        fixture.Store.Apply(trashed, BrowserFileAction.Recycle, default);
+        Assert.Equal(new[] { trashedPath, trashedPath + ".trash.json" }, recycled);
+        Assert.Throws<IOException>(() => fixture.Store.Apply(new BrowserSession { Path = session.Path, Deleted = true }, BrowserFileAction.Recycle, default));
+    }
+
+    [Fact]
+    public void RecycleFailurePreservesFilesAndCancellationDoesNotCallShell()
+    {
+        using var fixture = new Fixture();
+        var path = fixture.Store.Apply(fixture.Session(), BrowserFileAction.Trash, default);
+        var session = new BrowserSession { Path = path, Deleted = true };
+        var called = false;
+        fixture.Store.RecycleFiles = _ => { called = true; throw new IOException("Shell unavailable"); };
+        Assert.Throws<OperationCanceledException>(() => fixture.Store.Apply(session, BrowserFileAction.Recycle, new CancellationToken(true)));
+        Assert.False(called);
+        Assert.Throws<IOException>(() => fixture.Store.Apply(session, BrowserFileAction.Recycle, default));
+        Assert.True(File.Exists(path)); Assert.True(File.Exists(path + ".trash.json"));
+    }
+
+    [Fact]
+    public void WindowsRecycleBin_SyntheticFileOnly_WhenEnabled()
+    {
+        if (Environment.GetEnvironmentVariable("EZMATE_TEST_RECYCLE") != "1") return;
+        using var fixture = new Fixture();
+        var path = fixture.Store.Apply(fixture.Session(), BrowserFileAction.Trash, default);
+        fixture.Store.Apply(new BrowserSession { Path = path, Deleted = true }, BrowserFileAction.Recycle, default);
+        Assert.False(File.Exists(path)); Assert.False(File.Exists(path + ".trash.json"));
+    }
     private sealed class Fixture : IDisposable
     {
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "ezmate-browser-" + Guid.NewGuid());
@@ -69,6 +109,68 @@ public sealed class SessionBrowserTests(Xunit.Abstractions.ITestOutputHelper out
         var preview = fixture.Store.ReadPreview(session, default);
         Assert.Equal(2, preview.Messages.Count); Assert.Equal("user", preview.Messages[0].Role); Assert.Equal("Answer", preview.Messages[1].Text);
         Assert.False(preview.Truncated);
+    }
+
+    [Fact]
+    public void Scan_MergesPaginatedShardsAndIgnoresLegacyBackupFolders()
+    {
+        using var fixture = new Fixture();
+        const string id = "01a0766a-6c87-7e53-b256-ce198f61e676";
+        object Meta(object? history = null) => new
+        {
+            type = "session_meta",
+            payload = new { id, session_id = id, cwd = "C:/Example project", source = "vscode", history_base = history }
+        };
+        object Message(string role, string text) => new
+        {
+            type = "response_item",
+            timestamp = "2026-09-27",
+            payload = new { type = "message", role, content = new[] { new { text } } }
+        };
+
+        var baseText = JsonSerializer.Serialize(Meta()) + "\n" + JsonSerializer.Serialize(Message("user", "Old question")) + "\n";
+        var baseBytes = Encoding.UTF8.GetByteCount(baseText);
+        var oldText = baseText + JsonSerializer.Serialize(Message("assistant", "Superseded tail")) + "\n";
+        var oldPath = fixture.Write($"sessions/2026/09/06/rollout-2026-09-06T20-11-21-{id}.jsonl", oldText);
+        var history = new { thread_id = id, end_ordinal_exclusive = 301, end_byte_offset = baseBytes };
+        var newText = JsonSerializer.Serialize(Meta(history)) + "\n" + JsonSerializer.Serialize(Message("assistant", "New answer")) + "\n";
+        var newPath = fixture.Write($"sessions/2026/09/09/rollout-2026-09-09T17-55-37-{id}_01a08561-3d9f-76e2-ab0b-bfb682326476.jsonl", newText);
+        fixture.Write($"sessions/bkup_old/2026/09/06/rollout-2026-09-06T20-11-21-{id}.jsonl", oldText);
+
+        var session = Assert.Single(fixture.Store.Scan(default).Sessions);
+        Assert.Equal(id, session.Id);
+        Assert.Equal(2, session.Parts.Count);
+        Assert.Equal(new FileInfo(oldPath).Length + new FileInfo(newPath).Length, session.Size);
+        var preview = fixture.Store.ReadPreview(session, default);
+        Assert.Equal(new[] { "Old question", "New answer" }, preview.Messages.Select(message => message.Text));
+        var page = fixture.Store.ReadPreviewPage(session, null, default);
+        Assert.Contains("Old question", page.Text); Assert.Contains("New answer", page.Text);
+        Assert.DoesNotContain("Superseded tail", page.Text);
+    }
+
+    [Fact]
+    public void MultiShardTrashAndRestore_MoveTheWholeLogicalSession()
+    {
+        using var fixture = new Fixture();
+        const string id = "01a0766a-6c87-7e53-b256-ce198f61e676";
+        object Meta(object? history = null) => new
+        {
+            type = "session_meta",
+            payload = new { id, session_id = id, cwd = "C:/Example project", source = "vscode", history_base = history }
+        };
+        var oldPath = fixture.Write($"sessions/2026/09/06/rollout-{id}.jsonl", JsonSerializer.Serialize(Meta()) + "\n");
+        var history = new { thread_id = id, end_byte_offset = new FileInfo(oldPath).Length };
+        var newPath = fixture.Write($"sessions/2026/09/09/rollout-{id}_01a08561-3d9f-76e2-ab0b-bfb682326476.jsonl", JsonSerializer.Serialize(Meta(history)) + "\n");
+        var session = Assert.Single(fixture.Store.Scan(default).Sessions);
+
+        fixture.Store.Apply(session, BrowserFileAction.Trash, default);
+        Assert.False(File.Exists(oldPath)); Assert.False(File.Exists(newPath));
+        var deleted = Assert.Single(fixture.Store.Scan(default).Sessions.Where(item => item.Deleted));
+        Assert.Equal(2, deleted.Parts.Count);
+
+        fixture.Store.Apply(deleted, BrowserFileAction.Restore, default);
+        Assert.True(File.Exists(oldPath)); Assert.True(File.Exists(newPath));
+        Assert.Single(fixture.Store.Scan(default).Sessions.Where(item => !item.Deleted && !item.Backup));
     }
 
     [Theory]
@@ -240,7 +342,7 @@ public sealed class SessionBrowserTests(Xunit.Abstractions.ITestOutputHelper out
                 var output = Environment.GetEnvironmentVariable("CODEX_UI_PREVIEW_ROOT");
                 if (!string.IsNullOrWhiteSpace(output))
                 {
-                    Directory.CreateDirectory(output); var bitmap = new RenderTargetBitmap(1240, 740, 96, 96, PixelFormats.Pbgra32); bitmap.Render(content);
+                    Directory.CreateDirectory(output); var bitmap = DocumentationScreenshot.Capture(window, 1560, 1000);
                     var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var stream = File.Create(Path.Combine(output, $"session-browser-dotnet-{language}.png")); encoder.Save(stream);
                 }
                 window.Close();

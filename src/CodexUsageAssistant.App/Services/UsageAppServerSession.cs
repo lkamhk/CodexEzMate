@@ -154,7 +154,7 @@ internal sealed class StdioUsageConnection : IGoalRpcConnection
         client._reader = client.ReadAsync();
         try
         {
-            await client.RequestAsync("initialize", new { clientInfo = new { name = "codex_ezmate_usage", version = "1.21.4" }, capabilities = new { experimentalApi = true } }, token).ConfigureAwait(false);
+            await client.RequestAsync("initialize", new { clientInfo = new { name = "codex_ezmate_usage", version = "1.21.9" }, capabilities = new { experimentalApi = true } }, token).ConfigureAwait(false);
             await client.SendAsync(new { method = "initialized" }, token).ConfigureAwait(false); return client;
         }
         catch { await client.DisposeAsync().ConfigureAwait(false); throw; }

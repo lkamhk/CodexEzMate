@@ -23,7 +23,9 @@ public sealed class JsonSettingsService : ISettingsService
         try
         {
             await using var stream = new FileStream(_settingsPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 4096, true);
-            return await JsonSerializer.DeserializeAsync<WindowPosition>(stream, JsonOptions, cancellationToken);
+            var position = await JsonSerializer.DeserializeAsync<WindowPosition>(stream, JsonOptions, cancellationToken);
+            if (position?.DisplayMode == UsageDisplayMode.FloatingBall) position.DisplayMode = UsageDisplayMode.Both;
+            return position;
         }
         catch (JsonException) { return null; }
         catch (IOException) { return null; }
@@ -32,6 +34,7 @@ public sealed class JsonSettingsService : ISettingsService
 
     public async Task SaveAsync(WindowPosition position, CancellationToken cancellationToken)
     {
+        if (position.DisplayMode == UsageDisplayMode.FloatingBall) position.DisplayMode = UsageDisplayMode.Both;
         var directory = Path.GetDirectoryName(_settingsPath)!;
         Directory.CreateDirectory(directory);
         var temporaryPath = _settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";

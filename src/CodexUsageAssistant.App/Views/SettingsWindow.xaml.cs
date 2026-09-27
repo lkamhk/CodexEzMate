@@ -27,9 +27,8 @@ public partial class SettingsWindow : Window
         AppServerOnlyRadio.IsChecked = _model.UsageReadMode == UsageReadMode.AppServerOnly;
         DomOnlyRadio.IsChecked = _model.UsageReadMode == UsageReadMode.DomOnly;
         CodexExecutableTextBox.Text = _model.CodexExecutablePath ?? string.Empty;
-        FloatingBallModeRadio.IsChecked = _model.DisplayMode == UsageDisplayMode.FloatingBall;
         SystemTrayModeRadio.IsChecked = _model.DisplayMode == UsageDisplayMode.SystemTray;
-        BothModeRadio.IsChecked = _model.DisplayMode == UsageDisplayMode.Both;
+        BothModeRadio.IsChecked = _model.DisplayMode != UsageDisplayMode.SystemTray;
         ChineseLanguageRadio.IsChecked = _model.Language == AppLanguage.TraditionalChinese;
         EnglishLanguageRadio.IsChecked = _model.Language == AppLanguage.English;
         SimplifiedLanguageRadio.IsChecked = _model.Language == AppLanguage.SimplifiedChinese;
@@ -84,9 +83,7 @@ public partial class SettingsWindow : Window
             _model.AutoRefreshIntervalMinutes = string.IsNullOrEmpty(refreshText) || refreshText == "0"
                 ? null
                 : int.Parse(refreshText);
-            _model.DisplayMode = FloatingBallModeRadio.IsChecked == true
-                ? UsageDisplayMode.FloatingBall
-                : SystemTrayModeRadio.IsChecked == true
+            _model.DisplayMode = SystemTrayModeRadio.IsChecked == true
                     ? UsageDisplayMode.SystemTray
                     : UsageDisplayMode.Both;
             _model.Language = EnglishLanguageRadio.IsChecked == true

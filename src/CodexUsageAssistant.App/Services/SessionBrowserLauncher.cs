@@ -4,6 +4,8 @@ namespace CodexUsageAssistant.Services;
 
 public sealed class SessionBrowserLauncher : IDisposable
 {
+    private readonly SessionAutoNamingService? _naming;
+    public SessionBrowserLauncher(SessionAutoNamingService? naming = null) => _naming = naming;
     private SessionBrowserWindow? _window;
     private bool _exiting;
 
@@ -12,7 +14,7 @@ public sealed class SessionBrowserLauncher : IDisposable
         if (_exiting) return;
         if (_window is null)
         {
-            _window = new SessionBrowserWindow();
+            _window = new SessionBrowserWindow(naming: _naming);
             _window.Closed += (_, _) => _window = null;
         }
         if (!_window.IsVisible) _window.Show();

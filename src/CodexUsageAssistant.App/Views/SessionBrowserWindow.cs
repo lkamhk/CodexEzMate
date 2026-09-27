@@ -25,6 +25,9 @@ namespace CodexUsageAssistant.Views;
 public sealed class SessionBrowserWindow : Window
 {
     private readonly SessionBrowserStore _store;
+    private readonly SessionAutoNamingService? _naming;
+    private readonly TextBlock _namingStatus = new() { Margin = new Thickness(14, 0, 0, 0), TextWrapping = TextWrapping.Wrap };
+    private bool _namingBusy;
     private SessionBrowserSettings _settings;
     private AppLanguage _language;
     private readonly List<Action> _translations = [];
@@ -34,14 +37,14 @@ public sealed class SessionBrowserWindow : Window
     private readonly DataGrid _grid = new() { AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Extended,
         SelectionUnit = DataGridSelectionUnit.FullRow, EnableRowVirtualization = true, EnableColumnVirtualization = true, CanUserAddRows = false,
         CanUserDeleteRows = false, RowHeight = 30, HeadersVisibility = DataGridHeadersVisibility.Column, GridLinesVisibility = DataGridGridLinesVisibility.Horizontal };
-    private readonly TextBox _preview = new() { IsReadOnly = true, IsUndoEnabled = false, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new System.Windows.Media.FontFamily("Consolas"), FontSize = 13, Padding = new Thickness(12) };
+    private readonly ConversationPreviewBox _preview = new();
     private readonly TextBlock _previewTitle = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 6, 0, 6) };
     private readonly TextBlock _summary = new() { Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _status = new() { Foreground = System.Windows.Media.Brushes.SteelBlue, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
     private readonly Button _refresh = new();
     private readonly Button _backup = new();
     private readonly Button _delete = new();
+    private readonly Button _recycle = new();
     private readonly Button _restore = new();
     private readonly Button _cancel = new();
     private readonly Button _previousPage = new() { IsEnabled = false }, _nextPage = new() { IsEnabled = false }, _copyPage = new() { IsEnabled = false };
@@ -60,8 +63,9 @@ public sealed class SessionBrowserWindow : Window
     internal DataGrid SessionsGrid => _grid;
     internal string PreviewText => _preview.Text;
 
-    public SessionBrowserWindow(SessionBrowserStore? store = null)
+    public SessionBrowserWindow(SessionBrowserStore? store = null, SessionAutoNamingService? naming = null)
     {
+        _naming = naming;
         _store = store ?? new(); _settings = SessionBrowserSettings.Load(_store.SettingsPath);
         _language = LocalizationService.CurrentLanguage;
         Width = 1280; Height = 820; MinWidth = 920; MinHeight = 620; WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -87,7 +91,31 @@ public sealed class SessionBrowserWindow : Window
         Translate(() => searchLabel.Text = L("搜尋", "Search")); filters.Children.Add(searchLabel);
         filters.Children.Add(_search); filters.Children.Add(_filter); filters.Children.Add(_refresh); filters.Children.Add(_hideInternal); top.Children.Add(filters);
         Translate(() => { _search.ToolTip = L("搜尋名稱、訊息、ID、專案或路徑", "Search names, messages, IDs, projects or paths"); _hideInternal.Content = L("隱藏內部會話", "Hide internal sessions"); });
-        _refresh.Click += async (_, _) => await RefreshAsync(); Label(_refresh, "重新整理", "Refresh");
+        _refresh.Click += async (_, _) => await RefreshAsync();
+        _refresh.Content = new System.Windows.Controls.TextBlock { Text = "\uE72C", FontFamily = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"), FontSize = 17 };
+        _refresh.Padding = new Thickness(10, 7, 10, 7);
+        Translate(() => { _refresh.ToolTip = L("重新整理", "Refresh"); System.Windows.Automation.AutomationProperties.SetName(_refresh, L("重新整理", "Refresh")); });
+        var namingBar = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
+        namingBar.Children.Add(_namingStatus); top.Children.Add(namingBar);
+        Translate(UpdateNamingStatus);
+        var namingMenu = new ContextMenu();
+        var exclude = new MenuItem(); var restoreNaming = new MenuItem();
+        Translate(() => { exclude.Header = L("排除自動命名", "Exclude from automatic naming"); restoreNaming.Header = L("恢復自動命名", "Restore automatic naming"); });
+        namingMenu.Items.Add(exclude); namingMenu.Items.Add(restoreNaming); _grid.ContextMenu = namingMenu;
+        _grid.PreviewMouseRightButtonDown += (_, e) =>
+        {
+            var element = ItemsControl.ContainerFromElement(_grid, e.OriginalSource as DependencyObject);
+            if (element is DataGridRow row && !row.IsSelected) { _grid.SelectedItems.Clear(); row.IsSelected = true; }
+        };
+        namingMenu.Opened += (_, _) =>
+        {
+            var rows = NamingSelection();
+            exclude.IsEnabled = !_namingBusy && _naming is not null && rows.Any(r => !_naming.IsExcluded(r.Id));
+            restoreNaming.IsEnabled = !_namingBusy && _naming is not null && rows.Any(r => _naming.IsExcluded(r.Id));
+        };
+        exclude.Click += async (_, _) => await ChangeNamingAsync(() => _naming!.SetExcludedAsync(NamingSelection().Select(r => r.Id).ToArray(), true));
+        restoreNaming.Click += async (_, _) => await ChangeNamingAsync(() => _naming!.SetExcludedAsync(NamingSelection().Select(r => r.Id).ToArray(), false));
+        if (_naming is not null) { _naming.Changed += OnNamingChanged; _naming.NameUpdated += OnNameUpdated; }
         var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) }; top.Children.Add(actions);
         Button Action(string chinese, string english, Action run)
         {
@@ -98,8 +126,10 @@ public sealed class SessionBrowserWindow : Window
         Action("開啟 JSONL", "Open JSONL", () => OpenSelected(false));
         Action("開啟資料夾", "Open folder", () => OpenSelected(true));
         Label(_delete, "移至回收區", "Move to Trash"); Label(_backup, "備份", "Backup"); Label(_restore, "還原", "Restore"); Label(_cancel, "取消操作", "Cancel operation");
-        foreach (var button in new[] { _delete, _backup, _restore, _cancel }) actions.Children.Add(button);
+        Label(_recycle, "移至 Windows 資源回收筒", "Move to Windows Recycle Bin");
+        foreach (var button in new[] { _delete, _backup, _restore, _recycle, _cancel }) actions.Children.Add(button);
         _delete.Click += async (_, _) => await OperateAsync(BrowserFileAction.Trash);
+        _recycle.Click += async (_, _) => await OperateAsync(BrowserFileAction.Recycle);
         _backup.Click += async (_, _) => await OperateAsync(BrowserFileAction.Backup);
         _restore.Click += async (_, _) => await OperateAsync(BrowserFileAction.Restore);
         _cancel.Click += (_, _) => _operationCts?.Cancel();
@@ -123,7 +153,7 @@ public sealed class SessionBrowserWindow : Window
         Column("updated", "更新時間", "Updated", nameof(BrowserSession.Updated), 150, "yyyy-MM-dd HH:mm:ss");
         Column("status", "狀態", "Status", nameof(BrowserSession.Status), 115);
         Column("name", "會話名稱", "Session name", nameof(BrowserSession.DisplayName), 260);
-        Column("preview", "首則訊息", "First message", nameof(BrowserSession.Preview), 320);
+        Column("creator", "建立程式", "Created with", nameof(BrowserSession.CreatorDisplay), 140);
         Column("provider", "供應商", "Provider", nameof(BrowserSession.Provider), 90);
         Column("cwd", "專案／工作目錄", "Project / cwd", nameof(BrowserSession.Project), 230);
         Column("id", "會話 ID", "Session ID", nameof(BrowserSession.Id), 290);
@@ -151,12 +181,42 @@ public sealed class SessionBrowserWindow : Window
             // Cleanup runs after cancelled readers release their short-lived locks.
             _ = Task.Run(_store.ClearCaches);
             LocalizationService.LanguageChanged -= SetLanguage;
+            if (_naming is not null) { _naming.Changed -= OnNamingChanged; _naming.NameUpdated -= OnNameUpdated; }
         };
         LocalizationService.LanguageChanged += SetLanguage;
         UpdateButtons();
     }
 
     private string L(string chinese, string english) => LocalizationService.Translate(chinese, english, _language);
+    private BrowserSession[] NamingSelection() => Selected().Where(r => !r.Internal && !r.Archived && !r.Deleted && !r.Backup && Guid.TryParse(r.Id, out _)).ToArray();
+    private void OnNamingChanged() => Dispatcher.BeginInvoke(new Action(() => { if (!_closed) UpdateNamingStatus(); }));
+    private void OnNameUpdated(string id, string name) => Dispatcher.BeginInvoke(new Action(() =>
+    {
+        if (_closed) return;
+        foreach (var row in _sessions.Where(r => r.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+        { row.Name = name; row.SetLanguage(_language); }
+        UpdatePreviewTitle(); ApplyFilter();
+    }));
+    private void UpdateNamingStatus()
+    {
+        _namingStatus.Text = _namingBusy ? L("正在儲存，等待目前改名確認…", "Saving; waiting for the current rename to finish…") : _naming?.Status switch
+        {
+            "watching" => L("已啟用，等待下一次回覆完成", "Enabled; waiting for the next completed reply"),
+            "updated" => L("會話名稱已同步", "Session name synchronized"),
+            "uncertain" => L("設定已儲存；先前改名結果仍待確認，暫停該會話後續改名。", "Settings saved; an earlier rename is still unconfirmed. Further renames for that session are paused."),
+            "failed" => L("未能同步名稱或讀取設定，請檢查 Codex 連線及設定檔。", "Could not synchronize names or read settings. Check the Codex connection and settings file."),
+            _ => L("未啟用", "Off")
+        };
+    }
+    private async Task ChangeNamingAsync(Func<Task> change)
+    {
+        if (_naming is null || _namingBusy) return;
+        _namingBusy = true; UpdateNamingStatus();
+        try { await change(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
+        { _status.Text = L("自動命名設定未能儲存，請稍後重試。", "Could not save automatic naming settings. Please try again."); }
+        finally { _namingBusy = false; if (!_closed) UpdateNamingStatus(); }
+    }
     private void Translate(Action action) { _translations.Add(action); action(); }
     private void Label(Button button, string chinese, string english)
     { button.Padding = new Thickness(10, 6, 10, 6); button.Margin = new Thickness(0, 0, 7, 0); Translate(() => button.Content = L(chinese, english)); }
@@ -168,12 +228,13 @@ public sealed class SessionBrowserWindow : Window
     }
     internal void SetLanguage(AppLanguage language)
     {
-        _language = language; Title = "Codex EzMate v1.21.4 — " + L("會話瀏覽器", "Session Browser");
+        _preview.SetLanguage(language);
+        _language = language; Title = "Codex EzMate v1.21.9 — " + L("會話瀏覽器", "Session Browser");
         foreach (var session in _sessions) session.SetLanguage(language);
         foreach (var translate in _translations) translate();
         var restoring = _restoring; _restoring = true;
         var selected = _filter.SelectedIndex >= 0 ? _filter.SelectedIndex : Array.IndexOf(SessionBrowserSettings.Filters, _settings.Filter);
-        _filter.ItemsSource = new[] { L("所有會話", "All sessions"), L("使用中", "Active only"), L("已封存", "Archived only"), L("已刪除", "Deleted only"), L("備份", "Backups only") };
+        _filter.ItemsSource = new[] { L("所有會話", "All sessions"), L("使用中", "Active only"), L("已封存", "Archived only"), L("回收區", "Trash"), L("備份", "Backups only") };
         _filter.SelectedIndex = Math.Max(selected, 0); _restoring = restoring;
         ApplyFilter(); UpdatePreviewTitle();
     }
@@ -203,7 +264,7 @@ public sealed class SessionBrowserWindow : Window
         UpdateButtons();
         if (_grid.SelectedItem is null) { _previewCts?.Cancel(); _preview.Clear(); UpdatePreviewTitle(); }
         _summary.Text = $"{_grid.Items.Count}/{_sessions.Count}  ·  " + L("使用中", "Active") + $" {_sessions.Count(s => !s.Archived && !s.Deleted && !s.Backup)}  ·  "
-            + L("已封存", "Archived") + $" {_sessions.Count(s => s.Archived && !s.Deleted && !s.Backup)}  ·  " + L("已刪除", "Deleted") + $" {_sessions.Count(s => s.Deleted)}  ·  "
+            + L("已封存", "Archived") + $" {_sessions.Count(s => s.Archived && !s.Deleted && !s.Backup)}  ·  " + L("回收區", "Trash") + $" {_sessions.Count(s => s.Deleted)}  ·  "
             + L("備份", "Backups") + $" {_sessions.Count(s => s.Backup)}  ·  " + L("略過無法讀取", "Unreadable skipped") + $" {_skipped}\n{_store.CodexHome}";
     }
     private void Sort()
@@ -252,7 +313,9 @@ public sealed class SessionBrowserWindow : Window
             if (_closed || cts.IsCancellationRequested) return;
             if (result.Reloaded) { _previewCursor = null; _previousCursors.Clear(); _status.Text = L("對話已更新，已重新載入首頁。", "Conversation changed; reloaded the first page."); }
             _nextCursor = result.Next;
-            _preview.Text = result.Text.Length == 0 ? L("沒有可預覽的對話訊息", "No conversation messages to preview") : result.Text; _preview.ScrollToHome();
+            if (result.Text.Length == 0) _preview.Text = L("沒有可預覽的對話訊息", "No conversation messages to preview");
+            else _preview.ShowPage(result, _language);
+            _preview.ScrollToHome();
             _pageLabel.Text = L("頁", "Page") + " " + (_previousCursors.Count + 1);
             _previousPage.IsEnabled = _previousCursors.Count > 0; _nextPage.IsEnabled = result.Next is not null; _copyPage.IsEnabled = result.Text.Length > 0;
             if (result.Truncated) _status.Text = L("預覽已截斷；可開啟 JSONL 查看完整記錄。", "Preview truncated. Open JSONL for the full record.");
@@ -266,6 +329,7 @@ public sealed class SessionBrowserWindow : Window
         var selected = Selected(); var original = selected.Length > 0 && selected.All(s => !s.Deleted && !s.Backup);
         _backup.IsEnabled = _delete.IsEnabled = !_exiting && !IsFileOperationRunning && original;
         _restore.IsEnabled = !_exiting && !IsFileOperationRunning && selected.Length > 0 && selected.All(s => s.Deleted || s.Backup);
+        _recycle.IsEnabled = !_exiting && !IsFileOperationRunning && selected.Length > 0 && selected.All(s => s.Deleted && !s.Backup);
         _cancel.IsEnabled = IsFileOperationRunning; _refresh.IsEnabled = !IsFileOperationRunning;
         _grid.IsEnabled = _search.IsEnabled = _filter.IsEnabled = _hideInternal.IsEnabled = !IsFileOperationRunning;
     }
@@ -279,7 +343,12 @@ public sealed class SessionBrowserWindow : Window
     {
         if (IsFileOperationRunning || _exiting || _closed) return;
         var selected = Selected(); if (selected.Length == 0) return;
-        if (action != BrowserFileAction.Backup && System.Windows.MessageBox.Show(this,
+        if (action == BrowserFileAction.Recycle && selected.Any(s => !s.Deleted || s.Backup)) return;
+        if (action == BrowserFileAction.Recycle && System.Windows.MessageBox.Show(this,
+            L($"將所選 {selected.Length} 個會話及還原資料移至 Windows 資源回收筒。之後需先從 Windows 資源回收筒還原，才能在本程式還原會話。是否繼續？",
+                $"Move {selected.Length} selected sessions and their restore metadata to the Windows Recycle Bin? Restore them from Windows first before restoring the sessions in this app."),
+            L("移至 Windows 資源回收筒", "Move to Windows Recycle Bin"), MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        if (action is not (BrowserFileAction.Backup or BrowserFileAction.Recycle) && System.Windows.MessageBox.Show(this,
             L($"將處理 {selected.Length} 個會話。請先停止所選對話的工作。還原不會覆蓋現有檔案。是否繼續？", $"Process {selected.Length} sessions? Stop work in the selected conversations first. Restore never overwrites existing files."),
             action == BrowserFileAction.Trash ? L("確認移至回收區", "Confirm move to Trash") : L("確認還原", "Confirm restore"), MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
         _scanCts?.Cancel(); _previewCts?.Cancel(); IsFileOperationRunning = true; UpdateButtons();

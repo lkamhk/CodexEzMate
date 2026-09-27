@@ -10,25 +10,56 @@ public partial class App : System.Windows.Application
 {
     private ServiceProvider? _services;
     private TrayIconService? _trayIcon;
+    private ResetWatchService? _resetWatch;
     private CodexAppServerHost? _host;
     private IGoalResumeService? _goals;
     private GlobalHotkeyService? _hotkeys;
     private HotkeySettingsWindow? _hotkeyWindow;
     private bool _shuttingDown;
     private Mutex? _installationMutex;
+    private SingleInstanceActivation? _activation;
+    private bool _pendingSessionBrowser;
+    private bool _activationReady;
+    private CodexToolbarIconService? _toolbarIcon;
     private readonly CancellationTokenSource _updateCheck = new();
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        _activation = new SingleInstanceActivation();
+        if (!_activation.IsPrimary)
+        {
+            var forwarded = await _activation.ForwardAsync();
+            if (!forwarded) ShowActivationError();
+            Shutdown(forwarded ? 0 : 1);
+            return;
+        }
         // Setup checks for this handle and asks for a normal application exit.
-        _installationMutex = new Mutex(false, @"Local\CodexEzMate.Running");
+        _installationMutex = new Mutex(false, @"Local\CodexEzMate.Running", out var firstInstallation);
+        if (!firstInstallation)
+        {
+            ShowActivationError();
+            Shutdown(1);
+            return;
+        }
+        _pendingSessionBrowser = e.Args.Contains(SingleInstanceActivation.SessionBrowserArgument, StringComparer.OrdinalIgnoreCase);
+        _activation.Listen(() => Dispatcher.InvokeAsync(() =>
+        {
+            if (_shuttingDown) return false;
+            if (_activationReady) _trayIcon!.OpenSessionBrowser();
+            else _pendingSessionBrowser = true;
+            return true;
+        }).Task);
 
         var collection = new ServiceCollection();
         collection.AddSingleton<ISettingsService, JsonSettingsService>();
+        collection.AddSingleton<IResetFeedClient, ResetFeedClient>();
+        collection.AddSingleton<IResetWatchStore, ResetWatchStore>();
+        collection.AddSingleton<ResetWatchService>();
         collection.AddSingleton<AppUpdateService>();
         collection.AddSingleton<CodexAppServerHost>();
         collection.AddSingleton<UsageAppServerSession>();
+        collection.AddSingleton<SessionAutoNamingService>();
         collection.AddSingleton<WebView2UsageLoginService>();
         collection.AddSingleton<IAppServerUsageReader, AppServerUsageService>();
         collection.AddSingleton<IUsageLoginService>(provider => new UsageSourceService(
@@ -50,6 +81,7 @@ public partial class App : System.Windows.Application
         var settings = _services.GetRequiredService<ISettingsService>();
         var position = await settings.LoadAsync(CancellationToken.None) ?? new Models.WindowPosition();
         LocalizationService.Apply(position.Language);
+        _services.GetRequiredService<SessionAutoNamingService>().Start();
         _host = _services.GetRequiredService<CodexAppServerHost>();
         await _host.InitializeAsync();
         _goals = _services.GetRequiredService<IGoalResumeService>();
@@ -62,6 +94,20 @@ public partial class App : System.Windows.Application
         window.RestorePosition(position);
         _trayIcon = _services.GetRequiredService<TrayIconService>();
         _trayIcon.Initialize(detailsWindow, viewModel);
+        _toolbarIcon = new CodexToolbarIconService(_trayIcon.OpenSessionBrowser,
+            message => _trayIcon.ShowNotification("Codex EzMate", message));
+        _trayIcon.AttachToolbarIcon(_toolbarIcon);
+        _activationReady = true;
+        if (_pendingSessionBrowser)
+        {
+            _pendingSessionBrowser = false;
+            _trayIcon.OpenSessionBrowser();
+        }
+        _resetWatch = _services.GetRequiredService<ResetWatchService>();
+        await _resetWatch.InitializeAsync();
+        _trayIcon.AttachResetWatch(_resetWatch);
+        _resetWatch.UsageRefreshRequested += viewModel.RequestUsageRefresh;
+        viewModel.ResetWatchRequested += _trayIcon.OpenResetWatch;
         _hotkeys = new GlobalHotkeyService();
         viewModel.HotkeySettingsRequested += () =>
         {
@@ -101,6 +147,7 @@ public partial class App : System.Windows.Application
         ApplyDisplayMode(window, _trayIcon, position.DisplayMode);
         _trayIcon.SetLanguage(position.Language);
         await viewModel.InitializeAsync();
+        await _resetWatch.StartAsync();
         if (_goals is DesktopGoalResumeService recovery) _ = recovery.InitializeAsync(CancellationToken.None);
         AppUpdateService.AcknowledgeUpdateStartup(e.Args);
         if (AppUpdateService.IsConfigured) _ = CheckUpdatesAtStartupAsync(viewModel);
@@ -119,6 +166,10 @@ public partial class App : System.Windows.Application
         catch (Exception) { /* A failed automatic check must not interrupt normal startup. */ }
     }
 
+    private static void ShowActivationError() => System.Windows.MessageBox.Show(
+        "無法喚起已運行的 Codex EzMate。請先從通知區退出舊版，再重試。\nCould not activate Codex EzMate. Exit the older instance from the system tray and try again.",
+        "Codex EzMate", MessageBoxButton.OK, MessageBoxImage.Information);
+
     private static void ApplyLanguage(TrayIconService trayIcon, FloatingBallViewModel viewModel, Models.AppLanguage language)
     {
         LocalizationService.Apply(language);
@@ -135,6 +186,11 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _shuttingDown = true;
+        _toolbarIcon?.Dispose();
+        _activation?.Dispose();
+        _resetWatch?.Dispose();
+        _services?.GetService<SessionAutoNamingService>()?.Dispose();
         _installationMutex?.Dispose();
         _hotkeys?.Dispose();
         _updateCheck.Cancel();

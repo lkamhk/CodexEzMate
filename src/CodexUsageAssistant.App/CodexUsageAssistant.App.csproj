@@ -13,10 +13,11 @@
     <Title>Codex EzMate</Title>
     <Description>Codex EzMate desktop usage and App Server companion</Description>
     <RootNamespace>CodexUsageAssistant</RootNamespace>
-    <Version>1.21.4</Version>
+    <Version>1.21.9</Version>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\reset-feed.sample.json" LogicalName="CodexUsageAssistant.ResetFeed.Sample.json" />
     <ProjectReference Include="..\CodexEzMate.UpdateCore\CodexEzMate.UpdateCore.csproj" />
     <Content Include="assets\fluent\LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="Assets\CodexUsageAssistant.ico" />

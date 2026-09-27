@@ -15,7 +15,6 @@
       </Image>
       <StackPanel VerticalAlignment="Center">
         <TextBlock Text="Codex EzMate" FontSize="24" FontWeight="SemiBold"/>
-        <TextBlock Text="{DynamicResource SettingsTitle}" Foreground="#718690" Margin="0,5,0,0"/>
       </StackPanel>
     </DockPanel>
     <DockPanel DockPanel.Dock="Bottom" LastChildFill="False" Margin="0,16,0,0">
@@ -40,8 +39,11 @@
         <StackPanel Margin="0,20,0,0">
           <TextBlock Text="{DynamicResource UsageSourceTitle}" FontSize="20" FontWeight="SemiBold" />
           <RadioButton x:Name="AppServerFallbackRadio" GroupName="UsageSource" Content="{DynamicResource AppServerFallback}" Margin="0,20,0,10" />
+          <TextBlock Text="{DynamicResource AppServerFallbackHelp}" Foreground="#718690" TextWrapping="Wrap" Margin="20,0,0,12"/>
           <RadioButton x:Name="AppServerOnlyRadio" GroupName="UsageSource" Content="{DynamicResource AppServerOnly}" Margin="0,0,0,10" />
+          <TextBlock Text="{DynamicResource AppServerOnlyHelp}" Foreground="#718690" TextWrapping="Wrap" Margin="20,0,0,12"/>
           <RadioButton x:Name="DomOnlyRadio" GroupName="UsageSource" Content="{DynamicResource DomOnly}" Margin="0,0,0,20" />
+          <TextBlock Text="{DynamicResource DomOnlyHelp}" Foreground="#718690" TextWrapping="Wrap" Margin="20,0,0,12"/>
           <TextBlock Text="{DynamicResource CodexExecutable}" FontWeight="SemiBold" Margin="0,0,0,6" />
           <TextBox x:Name="CodexExecutableTextBox" Height="32" Padding="8,5" />
           <TextBlock Text="{DynamicResource UsageSourceHelp}" Foreground="#718690" TextWrapping="Wrap" Margin="0,12,0,0" />
@@ -53,9 +55,6 @@
           <TextBlock Text="{DynamicResource DisplayModeTitle}" FontSize="20" FontWeight="SemiBold" />
           <TextBlock Text="{DynamicResource DisplayModeDescription}"
                      Foreground="#718690" TextWrapping="Wrap" Margin="0,8,0,16" />
-          <RadioButton x:Name="FloatingBallModeRadio" GroupName="DisplayMode" Margin="0,7">
-            <TextBlock Text="{DynamicResource FloatingOnly}" Foreground="#243B49" />
-          </RadioButton>
           <RadioButton x:Name="SystemTrayModeRadio" GroupName="DisplayMode" Margin="0,7">
             <TextBlock Text="{DynamicResource TrayOnly}" Foreground="#243B49" />
           </RadioButton>

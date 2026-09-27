@@ -11,6 +11,28 @@ public sealed class JsonSettingsServiceTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"CodexUsageAssistantTests-{Guid.NewGuid():N}");
 
+    [Theory]
+    [InlineData(UsageDisplayMode.FloatingBall, UsageDisplayMode.Both)]
+    [InlineData(UsageDisplayMode.SystemTray, UsageDisplayMode.SystemTray)]
+    [InlineData(UsageDisplayMode.Both, UsageDisplayMode.Both)]
+    public async Task LegacyDisplayMode_LoadsAndPersistsSupportedMode(UsageDisplayMode saved, UsageDisplayMode expected)
+    {
+        Directory.CreateDirectory(_directory);
+        var path = Path.Combine(_directory, "settings.json");
+        await File.WriteAllTextAsync(path, System.Text.Json.JsonSerializer.Serialize(new WindowPosition
+        {
+            DisplayMode = saved, Left = 123, Language = AppLanguage.SimplifiedChinese
+        }), System.Text.Encoding.UTF8);
+        var service = new JsonSettingsService(path);
+        var loaded = await service.LoadAsync(CancellationToken.None);
+        Assert.NotNull(loaded);
+        Assert.Equal(expected, loaded.DisplayMode);
+        Assert.Equal(123, loaded.Left);
+        Assert.Equal(AppLanguage.SimplifiedChinese, loaded.Language);
+        await service.SaveAsync(loaded, CancellationToken.None);
+        Assert.Equal(expected, (await service.LoadAsync(CancellationToken.None))!.DisplayMode);
+    }
+
     [Fact]
     public async Task SaveAndLoad_RoundTripsPosition()
     {

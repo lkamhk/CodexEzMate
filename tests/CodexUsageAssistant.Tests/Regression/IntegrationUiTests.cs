@@ -114,7 +114,7 @@ public sealed class IntegrationUiTests
                     }
                     if (!string.IsNullOrWhiteSpace(output))
                     {
-                        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(panel);
+                        var bitmap = DocumentationScreenshot.Capture(manager, manager is ServerHostWindow ? 1000 : width, manager is ServerHostWindow ? 660 : height);
                         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
                         using var stream = File.Create(Path.Combine(output, $"{manager.GetType().Name}-{language}.png")); encoder.Save(stream);
                     }

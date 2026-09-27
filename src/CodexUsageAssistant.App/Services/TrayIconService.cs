@@ -11,7 +11,10 @@ namespace CodexUsageAssistant.Services;
 public sealed class TrayIconService : IDisposable, ITrayNotificationService
 {
     private readonly ISettingsService _settingsService;
-    private readonly SessionBrowserLauncher _sessionBrowser = new();
+    private readonly SessionBrowserLauncher _sessionBrowser;
+    private readonly SessionAutoNamingService? _naming;
+    private Forms.ToolStripMenuItem? _autoNameItem;
+    private bool _namingBusy;
     private Forms.NotifyIcon? _icon;
     private Icon? _appIcon;
     private Icon? _usageIcon;
@@ -20,7 +23,6 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
     private Forms.ContextMenuStrip? _menu;
     private Forms.ToolStripMenuItem? _usageItem;
     private Forms.ToolStripMenuItem? _resetItem;
-    private Forms.ToolStripMenuItem? _floatingModeItem;
     private Forms.ToolStripMenuItem? _trayModeItem;
     private Forms.ToolStripMenuItem? _bothModeItem;
     private Forms.ToolStripMenuItem? _chineseItem;
@@ -30,11 +32,24 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
     private TrayDetailsWindow? _detailsWindow;
     private UsageDisplayMode _displayMode = UsageDisplayMode.Both;
     private AppLanguage _language = AppLanguage.TraditionalChinese;
+    private ResetWatchService? _resetWatch;
+    private ResetWatchWindow? _resetWatchWindow;
+    private bool _resetNoticeActive;
+    private CodexToolbarIconService? _toolbarIcon;
+    private Forms.ToolStripMenuItem? _toolbarIconItem;
+
+    public void AttachToolbarIcon(CodexToolbarIconService icon)
+    {
+        _toolbarIcon = icon;
+        icon.EnabledChanged += enabled => { if (_toolbarIconItem is not null) _toolbarIconItem.Checked = enabled; };
+        BuildMenu();
+    }
 
     public event Action<UsageDisplayMode>? DisplayModeChanged;
     public event Action<AppLanguage>? LanguageChanged;
 
-    public TrayIconService(ISettingsService settingsService) => _settingsService = settingsService;
+    public TrayIconService(ISettingsService settingsService, SessionAutoNamingService? naming = null)
+    { _settingsService = settingsService; _sessionBrowser = new(naming); _naming = naming; }
 
     public void Initialize(TrayDetailsWindow detailsWindow, FloatingBallViewModel viewModel)
     {
@@ -45,10 +60,12 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
         _icon = new Forms.NotifyIcon
         {
             Icon = _appIcon,
-            Text = "Codex EzMate v1.21.4",
+            Text = "Codex EzMate v1.21.9",
             Visible = false
         };
         BuildMenu();
+        _icon.BalloonTipClicked += (_, _) => { if (_resetNoticeActive) RunOnUiThread(OpenResetWatch); };
+        if (_naming is not null) _naming.Changed += UpdateNamingCheck;
         _icon.MouseClick += (_, args) =>
         {
             if (args.Button != Forms.MouseButtons.Left) return;
@@ -56,6 +73,7 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
             RunOnUiThread(() => detailsWindow.ToggleNearTray(anchor));
         };
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        _viewModel.ResetsAdded += OnResetsAdded;
         UpdateUsageDisplay();
     }
 
@@ -97,12 +115,25 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
             RunOnUiThread(() => _detailsWindow.ToggleNearTray(Forms.Cursor.Position)));
         _menu.Items.Add(T("重新整理用量", "Refresh usage"), null,
             (_, _) => RunOnUiThread(() => _viewModel.RefreshCommand.Execute(null)));
+        _menu.Items.Add(T("Reset 動態", "Reset activity"), null, (_, _) => RunOnUiThread(OpenResetWatch));
         if (_viewModel.ShowDomLoginMenu)
             _menu.Items.Add(T("登入／取得額度", "Sign in / Get usage"), null,
                 (_, _) => RunOnUiThread(() => _viewModel.LoginCommand.Execute(null)));
         _menu.Items.Add(new Forms.ToolStripSeparator());
         _menu.Items.Add(T("開啟會話瀏覽器", "Open Session Browser"), null,
             (_, _) => RunOnUiThread(OpenSessionBrowser));
+        if (_toolbarIcon is not null)
+        {
+            _toolbarIconItem = new Forms.ToolStripMenuItem(T("Codex 工具列浮動圖示", "Codex toolbar floating icon"), null,
+                (_, _) => RunOnUiThread(() => _toolbarIcon.SetEnabled(!_toolbarIcon.Enabled)))
+            { Checked = _toolbarIcon.Enabled };
+            _menu.Items.Add(_toolbarIconItem);
+        }
+        _autoNameItem = new Forms.ToolStripMenuItem(T("自動命名會話", "Automatically name sessions"), null,
+            async (_, _) => await ToggleNamingAsync())
+        { Checked = _naming?.Enabled == true, Enabled = _naming is not null && !_namingBusy,
+            ToolTipText = T("回覆完成後更新名稱，不呼叫 AI、不消耗 token。", "Update names after completed replies without AI requests or token usage.") };
+        _menu.Items.Add(_autoNameItem);
         _menu.Items.Add(T("Goal 監控", "Goal monitoring"), null,
             (_, _) => RunOnUiThread(() => _viewModel.OpenGoalMonitorCommand.Execute(null)));
         _menu.Items.Add(T("Server 代管", "Server host"), null,
@@ -114,13 +145,11 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
             (_, _) => RunOnUiThread(() => _viewModel.CheckUpdatesCommand.Execute(null)));
 
         var modeMenu = new Forms.ToolStripMenuItem(T("顯示模式", "Display mode"));
-        _floatingModeItem = new Forms.ToolStripMenuItem(T("只顯示浮游球", "Floating ball only"), null,
-            async (_, _) => await ChangeDisplayModeAsync(UsageDisplayMode.FloatingBall));
-        _trayModeItem = new Forms.ToolStripMenuItem(T("只顯示系統托盤", "System tray only"), null,
+        _trayModeItem = new Forms.ToolStripMenuItem(T("僅顯示通知區圖示", "Notification area icon only"), null,
             async (_, _) => await ChangeDisplayModeAsync(UsageDisplayMode.SystemTray));
-        _bothModeItem = new Forms.ToolStripMenuItem(T("浮游球及系統托盤", "Floating ball and system tray"), null,
+        _bothModeItem = new Forms.ToolStripMenuItem(T("浮動球與通知區圖示", "Floating ball and notification area icon"), null,
             async (_, _) => await ChangeDisplayModeAsync(UsageDisplayMode.Both));
-        modeMenu.DropDownItems.AddRange([_floatingModeItem, _trayModeItem, _bothModeItem]);
+        modeMenu.DropDownItems.AddRange([_trayModeItem, _bothModeItem]);
         _menu.Items.Add(modeMenu);
 
         var languageMenu = new Forms.ToolStripMenuItem(T("介面語言", "UI language"));
@@ -144,7 +173,6 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
 
     private void UpdateMenuChecks()
     {
-        if (_floatingModeItem is not null) _floatingModeItem.Checked = _displayMode == UsageDisplayMode.FloatingBall;
         if (_trayModeItem is not null) _trayModeItem.Checked = _displayMode == UsageDisplayMode.SystemTray;
         if (_bothModeItem is not null) _bothModeItem.Checked = _displayMode == UsageDisplayMode.Both;
         if (_chineseItem is not null) _chineseItem.Checked = _language == AppLanguage.TraditionalChinese;
@@ -159,6 +187,54 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
         {
             ShowNotification(T("無法開啟會話瀏覽器", "Could not open Session Browser"), ex.Message);
         }
+    }
+
+    private void UpdateNamingCheck() => RunOnUiThread(() =>
+    {
+        if (_autoNameItem is null) return;
+        _autoNameItem.Checked = _naming?.Enabled == true;
+        _autoNameItem.Enabled = _naming is not null && !_namingBusy;
+    });
+
+    public void AttachResetWatch(ResetWatchService watch)
+    {
+        if (_resetWatch is not null) _resetWatch.AnnouncementsAvailable -= OnResetAnnouncements;
+        _resetWatch = watch;
+        watch.AnnouncementsAvailable += OnResetAnnouncements;
+    }
+
+    public void OpenResetWatch()
+    {
+        if (_resetWatch is null) return;
+        if (_resetWatchWindow is null)
+        {
+            _resetWatchWindow = new ResetWatchWindow(_resetWatch);
+            _resetWatchWindow.Closed += (_, _) => _resetWatchWindow = null;
+        }
+        _resetWatchWindow.Show();
+        if (_resetWatchWindow.WindowState == System.Windows.WindowState.Minimized)
+            _resetWatchWindow.WindowState = System.Windows.WindowState.Normal;
+        _resetWatchWindow.Activate();
+    }
+
+    private void OnResetAnnouncements(IReadOnlyList<ResetAnnouncement> items) => RunOnUiThread(() =>
+    {
+        if (_icon is null || _resetWatch?.Settings.Enabled != true || items.Count == 0) return;
+        var lines = items.Take(3).Select(item => ResetWatchViewModel.StatusLabel(item.Status) + " · "
+            + ResetWatchViewModel.EvidenceLabel(item.Evidence) + "\n" + (item.Title.Length > 140 ? item.Title[..140] + "…" : item.Title));
+        var message = string.Join("\n", lines) + "\n" + T("公告不代表帳戶已到帳。點擊查看來源及詳情。", "Announcements do not confirm account receipt. Click to review sources and details.");
+        if (items.Count > 3) message += T($"\n另有 {items.Count - 3} 項更新。", $"\n{items.Count - 3} more update(s).");
+        _resetNoticeActive = true;
+        _icon.ShowBalloonTip(8000, T("Reset 動態", "Reset activity"), message, Forms.ToolTipIcon.Info);
+    });
+    private async Task ToggleNamingAsync()
+    {
+        if (_naming is null || _namingBusy) return;
+        _namingBusy = true; UpdateNamingCheck();
+        try { await _naming.SetEnabledAsync(!_naming.Enabled); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
+        { ShowNotification(T("自動命名會話", "Automatically name sessions"), T("設定未能儲存，請稍後重試。", "Could not save the setting. Please try again.")); }
+        finally { _namingBusy = false; UpdateNamingCheck(); }
     }
 
     public bool CanCloseSessionBrowser() => _sessionBrowser.CanClose();
@@ -242,7 +318,7 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
         }
         var usage = $"5h {_viewModel.FiveHourPercent} · W {_viewModel.WeeklyPercent}";
         var reset = $"{T("可用 reset", "Available resets")}：{_viewModel.AvailableUsageResetDisplay}";
-        _icon.Text = TruncateTooltip($"Codex EzMate v1.21.4 | {usage}");
+        _icon.Text = TruncateTooltip($"Codex EzMate v1.21.9 | {usage}");
         if (_usageItem is not null) _usageItem.Text = usage;
         if (_resetItem is not null) _resetItem.Text = reset;
     }
@@ -252,11 +328,25 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
 
     internal static string TruncateTooltip(string text) => text.Length <= 63 ? text : text[..60] + "...";
 
+    private void OnResetsAdded(int added, int total) => RunOnUiThread(() =>
+    {
+        if (_resetWatch?.Settings.NotifyAccountChanges == false) return;
+        _resetNoticeActive = false;
+        _icon?.ShowBalloonTip(8000, T("可用 Reset 次數增加", "Available reset count increased"),
+            T($"帳戶讀數增加 {added} 次 reset，目前共有 {total} 次可用。請查看用量詳情；此變化未必與公開公告有關。",
+                $"Account reading increased by {added} reset(s), with {total} available. Review usage details; the change is not necessarily related to a public announcement."), Forms.ToolTipIcon.Info);
+    });
+
     public void Dispose()
     {
+        if (_resetWatch is not null) _resetWatch.AnnouncementsAvailable -= OnResetAnnouncements;
+        _resetWatchWindow?.Close();
+        _resetWatch = null;
+        if (_naming is not null) _naming.Changed -= UpdateNamingCheck;
         _sessionBrowser.Dispose();
         if (_icon is null) return;
-        if (_viewModel is not null) _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        if (_viewModel is not null)
+        { _viewModel.PropertyChanged -= OnViewModelPropertyChanged; _viewModel.ResetsAdded -= OnResetsAdded; }
         _icon.Visible = false;
         _icon.Dispose();
         _icon = null;
@@ -270,6 +360,9 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
         _detailsWindow = null;
     }
 
-    public void ShowNotification(string title, string message) =>
-        RunOnUiThread(() => _icon?.ShowBalloonTip(5000, title, message, Forms.ToolTipIcon.Warning));
+    public void ShowNotification(string title, string message) => RunOnUiThread(() =>
+    {
+        _resetNoticeActive = false;
+        _icon?.ShowBalloonTip(5000, title, message, Forms.ToolTipIcon.Warning);
+    });
 }

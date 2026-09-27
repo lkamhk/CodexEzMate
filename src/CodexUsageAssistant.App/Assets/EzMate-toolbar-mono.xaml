@@ -1,0 +1,19 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DrawingImage x:Key="EzMateToolbarLogo">
+    <DrawingImage.Drawing>
+      <DrawingGroup>
+        <GeometryDrawing Brush="Transparent" Geometry="M0,0 H128 V128 H0 Z" />
+        <!-- The open E and arrow share one solid silhouette with transparent counters. -->
+        <GeometryDrawing Brush="White"
+          Geometry="M76,8 H84 Q89,8 92,13 L116,46 Q120,52 116,58 L94,86 Q91,90 85,90 H59 C34,90 16,71 16,49 C16,28 30,11 50,8 H62 Q65,8 67,11 L74,22 H54 C43,22 33,31 31,42 H69 A7,7 0 0 1 69,56 H31 C34,68 45,76 59,76 H79 L99,52 Z" />
+        <!-- Rounded lowercase wordmark remains vector-based at every monitor DPI. -->
+        <GeometryDrawing Geometry="M10,122 V108 C10,100 24,100 24,108 V122 M24,108 C24,100 38,100 38,108 V122 M65,122 V104 H56 C44,104 44,122 56,122 Z M81,96 V116 Q81,122 88,122 M74,104 H91 M117,122 H108 C96,122 96,104 108,104 C115,104 119,107 119,113 H101">
+          <GeometryDrawing.Pen>
+            <Pen Brush="White" Thickness="6" StartLineCap="Round" EndLineCap="Round" LineJoin="Round" />
+          </GeometryDrawing.Pen>
+        </GeometryDrawing>
+      </DrawingGroup>
+    </DrawingImage.Drawing>
+  </DrawingImage>
+</ResourceDictionary>

@@ -29,7 +29,7 @@ public sealed class WebView2UsageLoginService : IUsageLoginService
         return timeout.IsCancellationRequested ? new UsageData
         {
             Status = UsageStatus.NetworkError,
-            ErrorMessage = LocalizationService.Pick("DOM 背景讀取逾時。", "DOM background read timed out.")
+            ErrorMessage = LocalizationService.Pick("讀取網站帳戶用量逾時，請稍後重試。", "Reading website account usage timed out. Please try again.")
         } : usage;
     }
 

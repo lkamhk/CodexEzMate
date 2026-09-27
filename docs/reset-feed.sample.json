@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "feedId": "ezmate-offline-demo",
+  "generatedAt": "2026-09-01T10:00:00Z",
+  "sources": [
+    { "id": "demo-official", "name": "DEMO / 範例公告來源", "health": "healthy", "lastSuccessfulCheckAt": "2026-09-01T10:00:00Z", "message": "Fictional fixture; not a live source." },
+    { "id": "demo-community", "name": "DEMO / 範例社群來源", "health": "degraded", "lastSuccessfulCheckAt": "2026-09-01T08:00:00Z", "message": "Example of a source that needs rechecking." }
+  ],
+  "events": [
+    {
+      "id": "demo-banked",
+      "revision": 2,
+      "title": "[DEMO / 範例] Banked Reset 發放公告",
+      "summary": "This is fictional data for testing the receiver. 這是接收端測試資料，不代表已發放或你的帳戶已到帳。",
+      "status": "announced",
+      "evidence": "official",
+      "impacts": ["banked"],
+      "publishedAt": "2026-09-01T09:00:00Z",
+      "updatedAt": "2026-09-01T09:50:00Z",
+      "scope": "Demo only / 僅供範例",
+      "links": [{ "sourceId": "demo-official", "label": "Example link / 範例連結", "url": "https://example.com/reset-demo" }]
+    },
+    {
+      "id": "demo-preview",
+      "revision": 1,
+      "title": "[DEMO / 範例] 未來一小時的 Reset 預告",
+      "summary": "A time range is preserved, not turned into a guaranteed countdown. 保留原文時段，不作保證倒數。",
+      "status": "preview",
+      "evidence": "official",
+      "impacts": ["global"],
+      "publishedAt": "2026-09-01T09:30:00Z",
+      "updatedAt": "2026-09-01T09:30:00Z",
+      "expectedStartAt": "2026-09-01T09:30:00Z",
+      "expectedEndAt": "2026-09-01T10:30:00Z",
+      "timeDescription": "Within the next hour / 未來一小時（虛構範例）",
+      "links": [{ "sourceId": "demo-official", "label": "Example link / 範例連結", "url": "https://example.com/preview-demo" }]
+    },
+    {
+      "id": "demo-community",
+      "revision": 1,
+      "title": "[DEMO / 範例] 社群回報額度恢復",
+      "summary": "Unverified; community popups are disabled by default. 未核實，社群彈出通知預設關閉。",
+      "status": "announced",
+      "evidence": "community",
+      "impacts": ["global"],
+      "publishedAt": "2026-09-01T09:00:00Z",
+      "updatedAt": "2026-09-01T09:00:00Z",
+      "links": [{ "sourceId": "demo-community", "label": "Example link / 範例連結", "url": "https://example.com/community-demo" }]
+    }
+  ]
+}

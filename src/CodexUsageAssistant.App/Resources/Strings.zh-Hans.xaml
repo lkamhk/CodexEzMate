@@ -2,10 +2,10 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
   <sys:String x:Key="HotkeySettings">快捷键设置</sys:String>
-  <sys:String x:Key="SettingsTitle">Codex EzMate v1.21.9 设置</sys:String>
-  <sys:String x:Key="LoginTitle">Codex EzMate v1.21.9 — 登录 ChatGPT</sys:String>
-  <sys:String x:Key="PickerTitle">Codex EzMate v1.21.9 — 抓取 Resume 座标</sys:String>
-  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.21.9 — 用量详情</sys:String>
+  <sys:String x:Key="SettingsTitle">Codex EzMate v1.22.7 设置</sys:String>
+  <sys:String x:Key="LoginTitle">Codex EzMate v1.22.7 — 登录 ChatGPT</sys:String>
+  <sys:String x:Key="PickerTitle">Codex EzMate v1.22.7 — 抓取 Resume 座标</sys:String>
+  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.22.7 — 用量详情</sys:String>
   <sys:String x:Key="UsageOverview">用量概览</sys:String>
   <sys:String x:Key="UsageSourceTab">资料来源</sys:String>
   <sys:String x:Key="UsageSourceTitle">用量数据来源</sys:String>
@@ -97,11 +97,11 @@
   <sys:String x:Key="HostLogin">登录 Codex</sys:String>
   <sys:String x:Key="HostModels">模型列表</sys:String>
   <sys:String x:Key="HostCancelLogin">取消登录</sys:String>
-  <sys:String x:Key="HostExecutable">codex.exe 完整路径（必填）</sys:String>
+  <sys:String x:Key="HostExecutable">codex.exe 路径（留空自动检测）</sys:String>
   <sys:String x:Key="HostDetect">自动检测</sys:String>
   <sys:String x:Key="TrayUsageIcon">系统托盘图标显示剩余百分比（5 小时优先，否则每周）</sys:String>
-  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.21.9 — Server 代管</sys:String>
-  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.21.9 — Goal 监控</sys:String>
+  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.22.7 — Server 代管</sys:String>
+  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.22.7 — Goal 监控</sys:String>
   <sys:String x:Key="CloseWindow">关闭</sys:String>
   <sys:String x:Key="AutoCheckUpdates">启动时自动检查更新</sys:String>
   <sys:String x:Key="GoalBackgroundHelp">Goal 恢复已实测成功。额度可用时，恢复已勾选的原 Desktop Goal，并发送继续消息；会消耗 token 及用量额度。</sys:String>
@@ -138,4 +138,8 @@
   <sys:String x:Key="ResetWatchEvidenceHint">来源分类由 Feed 提供，EzMate 未独立核实。</sys:String>
   <sys:String x:Key="ResetWatchSave">保存设置</sys:String>
   <sys:String x:Key="ResetWatchAccountHint">公告不代表账户已到账。时间使用本机时区。</sys:String>
+  <sys:String x:Key="ResetWatchPopup">有新公告时显示小窗口</sys:String>
+  <sys:String x:Key="ResetWatchPopupKeepOpen">默认保持打开，直到你手动关闭。</sys:String>
+  <sys:String x:Key="ResetWatchPopupAutoClose">自动关闭</sys:String>
+  <sys:String x:Key="ResetWatchPopupSeconds">秒后</sys:String>
 </ResourceDictionary>

@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace CodexUsageAssistant.Models;
 
 public enum ResetAnnouncementStatus { Preview, Announced, Corrected, Retracted }
-public enum ResetEvidence { Official, Corroborated, Community }
+public enum ResetEvidence { Official, Corroborated, Community, Tracker }
 public enum ResetImpact { Global, Banked, PolicyChange }
 public enum ResetSourceHealth { Healthy, Degraded, Unavailable }
 

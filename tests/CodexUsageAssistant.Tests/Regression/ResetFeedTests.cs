@@ -118,7 +118,7 @@ public sealed class ResetFeedTests
     public async Task RedirectsAndFailuresAreNotParsed(int status)
     {
         using var client = new ResetFeedClient(new Handler(_ => new((HttpStatusCode)status)));
-        await Assert.ThrowsAsync<HttpRequestException>(() => client.FetchAsync(new Uri(Settings.FeedUrl), null, null, CancellationToken.None));
+        await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.FetchAsync(new Uri(Settings.FeedUrl), null, null, CancellationToken.None));
     }
 
     [Theory]

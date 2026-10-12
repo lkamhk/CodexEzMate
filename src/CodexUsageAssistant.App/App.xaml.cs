@@ -19,6 +19,7 @@ public partial class App : System.Windows.Application
     private Mutex? _installationMutex;
     private SingleInstanceActivation? _activation;
     private bool _pendingSessionBrowser;
+    private bool _pendingResetPreview;
     private bool _activationReady;
     private CodexToolbarIconService? _toolbarIcon;
     private readonly CancellationTokenSource _updateCheck = new();
@@ -26,11 +27,15 @@ public partial class App : System.Windows.Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        var previewRequested = e.Args.Contains(SingleInstanceActivation.PreviewNotificationArgument, StringComparer.OrdinalIgnoreCase);
         _activation = new SingleInstanceActivation();
         if (!_activation.IsPrimary)
         {
-            var forwarded = await _activation.ForwardAsync();
-            if (!forwarded) ShowActivationError();
+            var forwarded = previewRequested
+                ? await _activation.ForwardCommandAsync(SingleInstanceActivation.PreviewNotificationCommand)
+                : await _activation.ForwardAsync();
+            if (!forwarded && previewRequested) System.Windows.MessageBox.Show("測試通知需要新版 EzMate（1.22.7 或以上）。請先從通知區退出舊版，再執行預覽 BAT。\nNotification preview requires EzMate 1.22.7 or later. Exit the older instance and launch the preview again.", "Codex EzMate");
+            else if (!forwarded) ShowActivationError();
             Shutdown(forwarded ? 0 : 1);
             return;
         }
@@ -43,9 +48,16 @@ public partial class App : System.Windows.Application
             return;
         }
         _pendingSessionBrowser = e.Args.Contains(SingleInstanceActivation.SessionBrowserArgument, StringComparer.OrdinalIgnoreCase);
-        _activation.Listen(() => Dispatcher.InvokeAsync(() =>
+        _pendingResetPreview = previewRequested;
+        _activation.Listen(command => Dispatcher.InvokeAsync(() =>
         {
             if (_shuttingDown) return false;
+            if (command == SingleInstanceActivation.PreviewNotificationCommand)
+            {
+                if (_activationReady) _trayIcon!.ShowResetPreview();
+                else _pendingResetPreview = true;
+                return true;
+            }
             if (_activationReady) _trayIcon!.OpenSessionBrowser();
             else _pendingSessionBrowser = true;
             return true;
@@ -97,15 +109,12 @@ public partial class App : System.Windows.Application
         _toolbarIcon = new CodexToolbarIconService(_trayIcon.OpenSessionBrowser,
             message => _trayIcon.ShowNotification("Codex EzMate", message));
         _trayIcon.AttachToolbarIcon(_toolbarIcon);
-        _activationReady = true;
-        if (_pendingSessionBrowser)
-        {
-            _pendingSessionBrowser = false;
-            _trayIcon.OpenSessionBrowser();
-        }
         _resetWatch = _services.GetRequiredService<ResetWatchService>();
         await _resetWatch.InitializeAsync();
         _trayIcon.AttachResetWatch(_resetWatch);
+        _activationReady = true;
+        if (_pendingSessionBrowser) { _pendingSessionBrowser = false; _trayIcon.OpenSessionBrowser(); }
+        if (_pendingResetPreview) { _pendingResetPreview = false; _trayIcon.ShowResetPreview(); }
         _resetWatch.UsageRefreshRequested += viewModel.RequestUsageRefresh;
         viewModel.ResetWatchRequested += _trayIcon.OpenResetWatch;
         _hotkeys = new GlobalHotkeyService();

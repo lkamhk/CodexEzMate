@@ -189,6 +189,17 @@ public sealed class ResetWatchTests
         Assert.Throws<InvalidDataException>(() => ResetWatchService.ValidateSettings(Settings with { PollIntervalMinutes = minutes }));
 
     [Fact]
+    public void PopupStaysOpenByDefaultAndOptionalTimeoutIsValidated()
+    {
+        Assert.Null(new ResetWatchSettings().PopupAutoCloseSeconds);
+        ResetWatchService.ValidateSettings(Settings with { PopupAutoCloseSeconds = null });
+        ResetWatchService.ValidateSettings(Settings with { PopupAutoCloseSeconds = 1 });
+        ResetWatchService.ValidateSettings(Settings with { PopupAutoCloseSeconds = 3600 });
+        Assert.Throws<InvalidDataException>(() => ResetWatchService.ValidateSettings(Settings with { PopupAutoCloseSeconds = 0 }));
+        Assert.Throws<InvalidDataException>(() => ResetWatchService.ValidateSettings(Settings with { PopupAutoCloseSeconds = 3601 }));
+    }
+
+    [Fact]
     public async Task FileStoreRoundTripsAndCancelledWritePreservesPreviousFile()
     {
         // Keep test-owned files under ignored build output; never touch the real user's settings.

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:converters="clr-namespace:CodexUsageAssistant.Converters"
         xmlns:views="clr-namespace:CodexUsageAssistant.Views"
-        Title="Codex EzMate v1.21.9" Icon="pack://application:,,,/Assets/CodexUsageAssistant.ico"
+        Title="Codex EzMate v1.22.7" Icon="pack://application:,,,/Assets/CodexUsageAssistant.ico"
         Width="72" Height="72" SizeToContent="Manual"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize">

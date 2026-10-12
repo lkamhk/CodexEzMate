@@ -32,11 +32,11 @@ public static class ResetNotificationCoordinator
             seen[item.Id] = new(item.Revision, now);
             if (baseline || !settings.Enabled || !recent) continue;
             if (item.Status == ResetAnnouncementStatus.Preview && item.ExpectedEndAt < now) continue;
-            var trusted = item.Evidence != ResetEvidence.Community;
+            var trusted = item.Evidence is ResetEvidence.Official or ResetEvidence.Corroborated;
             if (trusted && item.Status is ResetAnnouncementStatus.Announced or ResetAnnouncementStatus.Corrected
                 && item.Impacts.Any(x => x is ResetImpact.Global or ResetImpact.Banked)) refresh = true;
             var permitted = item.Status == ResetAnnouncementStatus.Preview ? settings.NotifyPreviews : settings.NotifyAnnouncements;
-            if (permitted && (trusted || settings.NotifyCommunity)) announcements.Add(item);
+            if (permitted && (trusted || item.Evidence == ResetEvidence.Tracker || settings.NotifyCommunity)) announcements.Add(item);
         }
         var currentIds = feed.Events.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
         seen = seen.OrderByDescending(x => currentIds.Contains(x.Key)).ThenByDescending(x => x.Value.ObservedAt).Take(2048)

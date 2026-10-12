@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using CodexUsageAssistant.Models;
 
 namespace CodexUsageAssistant.Services;
 
@@ -25,6 +26,7 @@ public sealed class SessionAutoNamingService : IDisposable
     private sealed class Options
     {
         public bool Enabled { get; set; }
+        public SessionNamingRules? Rules { get; set; }
         public HashSet<string> ExcludedIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, string> PendingNameHashes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
@@ -83,7 +85,8 @@ public sealed class SessionAutoNamingService : IDisposable
         if (File.Exists(_settingsPath))
         {
             var saved = JsonSerializer.Deserialize<Options>(File.ReadAllText(_settingsPath)) ?? throw new InvalidDataException("Invalid naming settings.");
-            saved.ExcludedIds = new(saved.ExcludedIds ?? [], StringComparer.OrdinalIgnoreCase);
+            saved.Rules?.Validate();
+            saved.ExcludedIds = new((saved.ExcludedIds ?? []).Where(id => Guid.TryParse(id, out _)).Select(id => Guid.Parse(id).ToString("D")), StringComparer.OrdinalIgnoreCase);
             saved.PendingNameHashes = new(saved.PendingNameHashes ?? [], StringComparer.OrdinalIgnoreCase); _options = saved;
         }
         Baseline(); _loaded = true; Status = IdleStatus;
@@ -118,9 +121,35 @@ public sealed class SessionAutoNamingService : IDisposable
         Changed?.Invoke();
     }
 
+    public async Task<SessionNamingConfiguration> GetConfigurationAsync(CancellationToken token = default)
+    {
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            Load();
+            return new(Enabled, _options.Rules?.Copy() ?? new(), _options.ExcludedIds.OrderBy(id => id).ToArray(), _options.Rules is null);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task ConfigureAsync(bool enabled, SessionNamingRules rules, CancellationToken token = default)
+    {
+        rules.Validate(); var copy = rules.Copy();
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            Load();
+            var next = CopyOptions(); next.Enabled = enabled; next.Rules = copy;
+            await SaveAsync(next, token).ConfigureAwait(false);
+            _options = next; _generation++; Baseline(); Status = IdleStatus;
+        }
+        finally { _gate.Release(); }
+        Changed?.Invoke();
+    }
+
     public async Task SetExcludedAsync(IEnumerable<string> ids, bool excluded, CancellationToken token = default)
     {
-        var targets = ids.Where(id => Guid.TryParse(id, out _)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var targets = ids.Where(id => Guid.TryParse(id, out _)).Select(id => Guid.Parse(id).ToString("D")).ToHashSet(StringComparer.OrdinalIgnoreCase);
         await _gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
@@ -153,7 +182,7 @@ public sealed class SessionAutoNamingService : IDisposable
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
-    private Options CopyOptions() => new() { Enabled = Enabled, ExcludedIds = new(_options.ExcludedIds, StringComparer.OrdinalIgnoreCase),
+    private Options CopyOptions() => new() { Enabled = Enabled, Rules = _options.Rules?.Copy(), ExcludedIds = new(_options.ExcludedIds, StringComparer.OrdinalIgnoreCase),
         PendingNameHashes = new(_options.PendingNameHashes, StringComparer.OrdinalIgnoreCase) };
     private string IdleStatus => _options.PendingNameHashes.Count > 0 ? "uncertain" : Enabled ? "watching" : "off";
     private static string NameHash(string text) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));
@@ -212,7 +241,9 @@ public sealed class SessionAutoNamingService : IDisposable
             // New input may have arrived while this item waited behind another rename.
             var info = new FileInfo(work.Path);
             if (!_files.TryGetValue(work.Path, out var state) || state.Length != info.Length || state.Written != info.LastWriteTimeUtc) return;
-            var name = work.Candidate.Name; var id = work.Candidate.ThreadId;
+            var id = work.Candidate.ThreadId;
+            var name = _options.Rules?.Format(work.Candidate.Project, work.Candidate.FirstPrompt, work.Candidate.LatestPrompt, id) ?? work.Candidate.Name;
+            if (string.IsNullOrWhiteSpace(name)) { Status = "empty"; return; }
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromSeconds(20));
             try
             {

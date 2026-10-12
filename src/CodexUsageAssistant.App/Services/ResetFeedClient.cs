@@ -11,6 +11,9 @@ namespace CodexUsageAssistant.Services;
 public sealed record ResetFeedResponse(ResetFeed? Feed, string? ETag = null,
     DateTimeOffset? LastModified = null, bool NotModified = false);
 
+internal sealed class ResetFeedBackoffException(TimeSpan delay) : HttpRequestException("Feed rate limit reached.")
+{ internal TimeSpan Delay { get; } = delay; }
+
 public interface IResetFeedClient
 {
     Task<ResetFeedResponse> FetchAsync(Uri address, string? etag, DateTimeOffset? lastModified, CancellationToken token);
@@ -61,6 +64,11 @@ public sealed class ResetFeedClient : IResetFeedClient, IDisposable
         if (etag?.Length <= 1024 && EntityTagHeaderValue.TryParse(etag, out var tag)) request.Headers.IfNoneMatch.Add(tag);
         if (lastModified.HasValue) request.Headers.IfModifiedSince = lastModified;
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            var delay = response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow) ?? TimeSpan.FromMinutes(5);
+            throw new ResetFeedBackoffException(TimeSpan.FromSeconds(Math.Clamp(delay.TotalSeconds, 1, TimeSpan.FromDays(7).TotalSeconds)));
+        }
         if (response.StatusCode == HttpStatusCode.NotModified)
             return new(null, response.Headers.ETag?.ToString() ?? etag, response.Content.Headers.LastModified ?? lastModified, true);
         // No automatic redirects, account authentication, cookies, scripts or HTML rendering.
@@ -68,7 +76,7 @@ public sealed class ResetFeedClient : IResetFeedClient, IDisposable
         if (response.Content.Headers.ContentLength > MaximumBytes) throw new InvalidDataException("Feed is too large.");
         await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
         var data = await ReadBoundedAsync(stream, MaximumBytes, timeout.Token).ConfigureAwait(false);
-        return new(Parse(data, DateTimeOffset.UtcNow), response.Headers.ETag?.ToString(), response.Content.Headers.LastModified);
+        return new(ParseResponse(data, address, DateTimeOffset.UtcNow), response.Headers.ETag?.ToString(), response.Content.Headers.LastModified);
     }
 
     internal static async Task<byte[]> ReadBoundedAsync(Stream stream, int maximum, CancellationToken token)
@@ -92,6 +100,15 @@ public sealed class ResetFeedClient : IResetFeedClient, IDisposable
         var feed = document.RootElement.Deserialize<ResetFeed>(JsonOptions) ?? throw new InvalidDataException("Empty feed.");
         Validate(feed, now);
         return feed;
+    }
+
+    internal static ResetFeed ParseResponse(byte[] data, Uri address, DateTimeOffset now)
+    {
+        if (!CodexResetsApiAdapter.Matches(address)) return Parse(data, now);
+        if (data.Length > MaximumBytes) throw new InvalidDataException("Feed is too large.");
+        using var document = JsonDocument.Parse(data, new JsonDocumentOptions { MaxDepth = 20 });
+        RejectDuplicateProperties(document.RootElement);
+        return CodexResetsApiAdapter.Parse(document.RootElement, now);
     }
 
     private static void RejectDuplicateProperties(JsonElement element)

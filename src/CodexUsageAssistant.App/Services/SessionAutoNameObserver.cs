@@ -13,7 +13,9 @@ internal static class SessionNameFormatter
         return elements.Length <= 5 ? text : text[..elements[5]] + "…";
     }
 
-    internal static string UserText(string text)
+    internal static string UserText(string text) => Shorten(CleanUserText(text));
+
+    internal static string CleanUserText(string text)
     {
         text = text.Trim();
         // These envelopes are injected context, not instructions for this parser.
@@ -28,11 +30,12 @@ internal static class SessionNameFormatter
         // Ignore known attachment blocks, keeping surrounding user-authored text.
         text = Regex.Replace(text, @"<image\b[^>]*>.*?</image>|<image\b[^>]*/>", "", RegexOptions.Singleline);
         if (text.StartsWith('<')) return "";
-        return Shorten(text);
+        return Models.SessionNamingRules.Limit(text, 4096);
     }
 }
 
-internal sealed record AutoNameCandidate(string ThreadId, string Name, long EndOffset);
+internal sealed record AutoNameCandidate(string ThreadId, string Name, long EndOffset,
+    string Project = "", string FirstPrompt = "", string LatestPrompt = "");
 
 internal sealed class SessionAutoNameObserver
 {
@@ -79,7 +82,7 @@ internal sealed class SessionAutoNameObserver
                     var signature = Get(root, "timestamp") + ":" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)));
                     if (_lastEvent == signature) return;
                     _lastEvent = signature;
-                    var text = SessionNameFormatter.UserText(raw);
+                    var text = SessionNameFormatter.CleanUserText(raw);
                     if (text.Length > 0) { Add(text); _canonical = true; ClearFallback(); }
                 }
                 else if (kind is "task_failed" or "turn_aborted" or "task_aborted" or "error")
@@ -93,7 +96,10 @@ internal sealed class SessionAutoNameObserver
                     { Add(_fallbackFirst); if (_fallbackCount > 1) Add(_fallback); }
                     _active = false; _completedTurn = completed; ClearFallback();
                     if (end > cutoff && !(reset && previouslyRead) && _count > 0 && Guid.TryParse(_id, out _))
-                        candidate = new(_id, _project.Length > 0 ? _project + " | " + _latest : _count == 1 ? _first : _first + " | " + _latest, end);
+                        candidate = new(_id, _project.Length > 0 ? _project + " | " + SessionNameFormatter.Shorten(_latest)
+                            : _count == 1 ? SessionNameFormatter.Shorten(_first)
+                            : SessionNameFormatter.Shorten(_first) + " | " + SessionNameFormatter.Shorten(_latest),
+                            end, _project, _first, _latest);
                 }
             }
             else if (type == "response_item" && kind == "message" && Get(payload, "role") == "user" && !_canonical)
@@ -101,7 +107,7 @@ internal sealed class SessionAutoNameObserver
                 var content = SessionBrowserStore.Property(payload, "content");
                 if (content.ValueKind != JsonValueKind.Array) return;
                 var text = string.Join("\n", content.EnumerateArray().Where(c => Get(c, "type") == "input_text").Select(c => Get(c, "text")));
-                var clean = SessionNameFormatter.UserText(text);
+                var clean = SessionNameFormatter.CleanUserText(text);
                 if (clean.Length > 0)
                 {
                     if (_fallbackCount == 0) _fallbackFirst = clean;

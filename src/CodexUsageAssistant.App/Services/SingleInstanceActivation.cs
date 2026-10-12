@@ -12,6 +12,8 @@ namespace CodexUsageAssistant.Services;
 public sealed class SingleInstanceActivation : IDisposable
 {
     public const string SessionBrowserArgument = "--session-browser";
+    public const string PreviewNotificationArgument = "--preview-reset-notice";
+    public const string PreviewNotificationCommand = "reset-preview";
     private const string OpenCommand = "session-browser";
     private readonly Mutex _mutex;
     private readonly string _pipeName;
@@ -38,14 +40,19 @@ public sealed class SingleInstanceActivation : IDisposable
         return $"{identity.User?.Value ?? Environment.UserName}:{process.SessionId}";
     }
 
-    public void Listen(Func<Task<bool>> open)
+    public void Listen(Func<Task<bool>> open) => Listen(command => command == OpenCommand ? open() : Task.FromResult(false));
+
+    public void Listen(Func<string, Task<bool>> open)
     {
         if (!IsPrimary || _listener is not null) throw new InvalidOperationException("Only the primary instance can listen once.");
         _listener = ListenAsync(open);
     }
 
-    public async Task<bool> ForwardAsync(CancellationToken cancellationToken = default)
+    public Task<bool> ForwardAsync(CancellationToken cancellationToken = default) => ForwardCommandAsync(OpenCommand, cancellationToken);
+
+    public async Task<bool> ForwardCommandAsync(string command, CancellationToken cancellationToken = default)
     {
+        if (command is not (OpenCommand or PreviewNotificationCommand)) throw new ArgumentException("Unknown activation command.", nameof(command));
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
         try
@@ -58,7 +65,7 @@ public sealed class SingleInstanceActivation : IDisposable
             if (!uint.TryParse(greeting, NumberStyles.None, CultureInfo.InvariantCulture, out var pid)) return false;
             // The process launched by the user's click delegates foreground permission.
             AllowSetForegroundWindow(pid);
-            await writer.WriteLineAsync(OpenCommand.AsMemory(), timeout.Token).ConfigureAwait(false);
+            await writer.WriteLineAsync(command.AsMemory(), timeout.Token).ConfigureAwait(false);
             return await reader.ReadLineAsync(timeout.Token).ConfigureAwait(false) == "ok";
         }
         catch (Exception ex) when (ex is IOException or OperationCanceledException or UnauthorizedAccessException)
@@ -67,7 +74,7 @@ public sealed class SingleInstanceActivation : IDisposable
         }
     }
 
-    private async Task ListenAsync(Func<Task<bool>> open)
+    private async Task ListenAsync(Func<string, Task<bool>> open)
     {
         var stop = _stop.Token;
         while (!stop.IsCancellationRequested)
@@ -83,7 +90,7 @@ public sealed class SingleInstanceActivation : IDisposable
                 using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 128, leaveOpen: true) { AutoFlush = true, NewLine = "\n" };
                 await writer.WriteLineAsync(Environment.ProcessId.ToString(CultureInfo.InvariantCulture).AsMemory(), timeout.Token).ConfigureAwait(false);
                 // Read a fixed command length so malformed input cannot grow memory indefinitely.
-                var command = new char[OpenCommand.Length + 1];
+                var command = new char[Math.Max(OpenCommand.Length, PreviewNotificationCommand.Length) + 1];
                 var length = 0;
                 var terminated = false;
                 while (length < command.Length)
@@ -93,8 +100,9 @@ public sealed class SingleInstanceActivation : IDisposable
                     if (command[length] == '\n') { terminated = true; break; }
                     length++;
                 }
-                var accepted = terminated && new string(command, 0, length) == OpenCommand
-                    && await open().WaitAsync(timeout.Token).ConfigureAwait(false);
+                var value = new string(command, 0, length);
+                var accepted = terminated && (value is OpenCommand or PreviewNotificationCommand)
+                    && await open(value).WaitAsync(timeout.Token).ConfigureAwait(false);
                 await writer.WriteLineAsync((accepted ? "ok" : "busy").AsMemory(), timeout.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }

@@ -25,6 +25,9 @@ public partial class ResetWatchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _notifyPreviews;
     [ObservableProperty] private bool _notifyAnnouncements;
     [ObservableProperty] private bool _notifyCommunity;
+    [ObservableProperty] private bool _showPopup;
+    [ObservableProperty] private bool _popupAutoClose;
+    [ObservableProperty] private string _popupAutoCloseSeconds = "30";
     [ObservableProperty] private bool _notifyAccountChanges;
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private string _statusDetail = "";
@@ -36,6 +39,7 @@ public partial class ResetWatchViewModel : ObservableObject, IDisposable
     public bool CanEdit => !Busy && !_watch.IsRefreshing;
     public bool CanCheck => CanEdit && _watch.Settings.Enabled;
     public Visibility EmptyVisibility => Events.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility TrackerAttributionVisibility => _watch.State.Feed?.FeedId == CodexResetsApiAdapter.FeedId ? Visibility.Visible : Visibility.Collapsed;
 
     public ResetWatchViewModel(ResetWatchService watch, AppLanguage? language = null)
     {
@@ -58,6 +62,9 @@ public partial class ResetWatchViewModel : ObservableObject, IDisposable
         PollMinutes = settings.PollIntervalMinutes.ToString(CultureInfo.InvariantCulture);
         NotifyPreviews = settings.NotifyPreviews; NotifyAnnouncements = settings.NotifyAnnouncements;
         NotifyCommunity = settings.NotifyCommunity; NotifyAccountChanges = settings.NotifyAccountChanges;
+        ShowPopup = settings.ShowPopup;
+        PopupAutoClose = settings.PopupAutoCloseSeconds is > 0;
+        PopupAutoCloseSeconds = (settings.PopupAutoCloseSeconds ?? 30).ToString(CultureInfo.InvariantCulture);
     }
 
     partial void OnBusyChanged(bool value) { OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(CanCheck)); }
@@ -76,16 +83,30 @@ public partial class ResetWatchViewModel : ObservableObject, IDisposable
         if (!CanEdit) return;
         if (!int.TryParse(PollMinutes, NumberStyles.None, CultureInfo.InvariantCulture, out var minutes))
         { Message = L("請輸入 5–60 分鐘的整數。", "Enter a whole number from 5 to 60 minutes."); return; }
+        int? popupAutoCloseSeconds = null;
+        if (PopupAutoClose)
+        {
+            if (!int.TryParse(PopupAutoCloseSeconds, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
+                || seconds is < 1 or > 3600)
+            {
+                Message = L("小視窗自動關閉時間必須是 1–3600 秒的整數。",
+                    "Popup auto-close must be a whole number from 1 to 3600 seconds.");
+                return;
+            }
+            popupAutoCloseSeconds = seconds;
+        }
         Busy = true;
         try
         {
             await _watch.SaveSettingsAsync(new ResetWatchSettings { Enabled = Enabled, FeedUrl = FeedUrl,
                 PollIntervalMinutes = minutes, NotifyPreviews = NotifyPreviews, NotifyAnnouncements = NotifyAnnouncements,
-                NotifyCommunity = NotifyCommunity, NotifyAccountChanges = NotifyAccountChanges }, _closed.Token);
+                NotifyCommunity = NotifyCommunity, NotifyAccountChanges = NotifyAccountChanges, ShowPopup = ShowPopup,
+                PopupAutoCloseSeconds = popupAutoCloseSeconds }, _closed.Token);
             LoadSettings();
             Message = L("設定已儲存", "Settings saved");
         }
-        catch (InvalidDataException) { Message = L("請檢查 HTTPS 網址及間隔（5–60 分鐘）。", "Check the HTTPS URL and interval (5–60 minutes)."); }
+        catch (InvalidDataException) { Message = L("請檢查 HTTPS 網址、檢查間隔及小視窗自動關閉時間。",
+            "Check the HTTPS URL, polling interval, and popup auto-close time."); }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ResetWatchService.IsExpected(ex)) { Message = L("儲存失敗，已保留原設定。", "Save failed. Previous settings retained."); }
         finally { Busy = false; UpdateDisplay(); }
@@ -117,6 +138,7 @@ public partial class ResetWatchViewModel : ObservableObject, IDisposable
         var now = DateTimeOffset.UtcNow;
         var state = _watch.State;
         var feed = state.Feed;
+        OnPropertyChanged(nameof(TrackerAttributionVisibility));
         bool Healthy(ResetFeedSource source) => source.Health == ResetSourceHealth.Healthy
             && source.LastSuccessfulCheckAt is { } at && now - at <= ResetFeedClient.MaximumAge;
         var healthyCount = feed?.Sources.Count(Healthy) ?? 0;
@@ -173,6 +195,7 @@ public partial class ResetWatchViewModel : ObservableObject, IDisposable
     {
         var (chinese, english) = evidence switch
         { ResetEvidence.Official => ("Feed：官方來源", "Feed: official source"),
+              ResetEvidence.Tracker => ("網站彙整 · 非官方 API", "Tracker · unofficial API"),
             ResetEvidence.Corroborated => ("Feed：交叉核實", "Feed: corroborated"), _ => ("社群 · 未核實", "Community · unverified") };
         return LocalizationService.Translate(chinese, english, language ?? LocalizationService.CurrentLanguage);
     }

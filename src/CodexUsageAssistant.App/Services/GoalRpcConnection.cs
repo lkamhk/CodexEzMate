@@ -37,7 +37,7 @@ internal sealed class GoalRpcConnection : IGoalRpcConnection
             connection._reader = connection.ReadAsync();
             await connection.RequestAsync("initialize", new
             {
-                clientInfo = new { name = "codex_ezmate_goals", title = "Codex EzMate", version = "1.21.9" },
+                clientInfo = new { name = "codex_ezmate_goals", title = "Codex EzMate", version = "1.22.7" },
                 capabilities = new { experimentalApi = true }
             }, timeout.Token).ConfigureAwait(false);
             await connection.SendAsync(new { method = "initialized", @params = new { } }, timeout.Token).ConfigureAwait(false);

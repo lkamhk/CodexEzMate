@@ -229,7 +229,7 @@ public sealed class SessionBrowserWindow : Window
     internal void SetLanguage(AppLanguage language)
     {
         _preview.SetLanguage(language);
-        _language = language; Title = "Codex EzMate v1.21.9 — " + L("會話瀏覽器", "Session Browser");
+        _language = language; Title = "Codex EzMate v1.22.7 — " + L("會話瀏覽器", "Session Browser");
         foreach (var session in _sessions) session.SetLanguage(language);
         foreach (var translate in _translations) translate();
         var restoring = _restoring; _restoring = true;

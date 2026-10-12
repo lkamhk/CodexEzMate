@@ -30,7 +30,9 @@ public sealed class CodexToolbarIconService : IDisposable
     private bool _refreshQueued;
     private double _scale = 1;
     public bool Enabled => _settings.Enabled;
+    public bool FixedMode => _settings.FixedMode;
     public event Action<bool>? EnabledChanged;
+    public event Action<bool>? FixedModeChanged;
 
     public CodexToolbarIconService(Action open, Action<string> report)
         : this(open, report, Path.Combine(InstallationPaths.Root, "settings", "toolbar-icon.json"), null) { }
@@ -41,6 +43,8 @@ public sealed class CodexToolbarIconService : IDisposable
         _windowMatcher = windowMatcher;
         _report = report;
         _settings = ToolbarIconSettings.Load(_settingsPath);
+        _window.SetFixedMode(_settings.FixedMode);
+        _window.FixedModeRequested += SetFixedMode;
         _handle = new WindowInteropHelper(_window).EnsureHandle();
         _window.OpenRequested += () =>
         {
@@ -51,11 +55,13 @@ public sealed class CodexToolbarIconService : IDisposable
         };
         _window.Dragged += (dx, dy) =>
         {
-            _settings.Right -= dx / _scale; _settings.Top += dy / _scale;
+            if (_settings.FixedMode) return;
+            _settings.Right -= dx / _scale;
+            _settings.Top += dy / _scale;
             Refresh();
         };
         _window.DragCompleted += Save;
-        _window.ResetRequested += () => { _settings.Right = 200; _settings.Top = 62; Save(); Refresh(); };
+        _window.ResetRequested += () => { _settings.ResetPosition(); Save(); Refresh(); };
         _window.HideRequested += () => SetEnabled(false);
         _callback = (_, eventType, hwnd, _, _, _, _) =>
         {
@@ -81,6 +87,12 @@ public sealed class CodexToolbarIconService : IDisposable
         _settings.Enabled = enabled; Save(); Refresh(); EnabledChanged?.Invoke(enabled);
     }
 
+    public void SetFixedMode(bool enabled)
+    {
+        _settings.FixedMode = enabled; _window.SetFixedMode(enabled);
+        Save(); Refresh(); FixedModeChanged?.Invoke(enabled);
+    }
+
     private void Save()
     {
         try { _settings.Save(_settingsPath); }
@@ -100,18 +112,30 @@ public sealed class CodexToolbarIconService : IDisposable
         else if (!_window.IsInteracting && foreground != _handle) { _window.Hide(); return; }
         if (_target == IntPtr.Zero || !IsWindowVisible(_target) || IsIconic(_target)
             || (DwmGetWindowAttribute(_target, 14, out var cloaked, sizeof(int)) == 0 && cloaked != 0)
-            || !GetClientRect(_target, out var client)) { _window.Hide(); return; }
-        var origin = new NativePoint();
-        if (!ClientToScreen(_target, ref origin)) { _window.Hide(); return; }
+            ) { _window.Hide(); return; }
+        // Visible frame bounds include the title bar and exclude invisible resize borders.
+        if (DwmGetFrameBounds(_target, 9, out var frame, Marshal.SizeOf<NativeRect>()) != 0 && !GetWindowRect(_target, out frame))
+        { _window.Hide(); return; }
+        var width = frame.Right - frame.Left; var height = frame.Bottom - frame.Top;
         var dpi = GetDpiForWindow(_target);
         _scale = dpi == 0 ? 1 : dpi / 96.0;
-        if (client.Right < 64 * _scale || client.Bottom < 64 * _scale) { _window.Hide(); return; }
-        var bounds = ToolbarIconPlacement.Calculate(origin.X, origin.Y, client.Right, client.Bottom, _scale, _settings);
-        if (_window.IsMouseCaptured)
+        if (width < 64 * _scale || height < 64 * _scale) { _window.Hide(); return; }
+        ToolbarIconBounds bounds;
+        if (_settings.FixedMode)
+        {
+            // Electron's maximized frame includes hidden resize borders (for example -8,-8).
+            // Its sidebar is laid out from the client origin, which remains the visual origin.
+            var fixedBounds = GetFixedPlacement(_target, _scale);
+            if (fixedBounds is null)
+            { _window.Hide(); return; }
+            bounds = fixedBounds.Value;
+        }
+        else bounds = ToolbarIconPlacement.Calculate(frame.Left, frame.Top, width, height, _scale, _settings);
+        if (!_settings.FixedMode && _window.IsMouseCaptured)
         {
             // Persist the clamped position so dragging never creates an invisible offset.
-            _settings.Right = (origin.X + client.Right - bounds.X - bounds.Size) / _scale;
-            _settings.Top = (bounds.Y - origin.Y) / _scale;
+            _settings.Right = (frame.Right - bounds.X - bounds.Size) / _scale;
+            _settings.Top = (bounds.Y - frame.Top) / _scale;
         }
         if (!_window.IsVisible)
         {
@@ -120,6 +144,13 @@ public sealed class CodexToolbarIconService : IDisposable
         }
         SetWindowPos(_handle, new IntPtr(-1), bounds.X, bounds.Y, bounds.Size, bounds.Size, 0x10 | 0x40);
         _window.Opacity = 1;
+    }
+
+    internal static ToolbarIconBounds? GetFixedPlacement(IntPtr hwnd, double scale)
+    {
+        var origin = new NativePoint();
+        if (!GetClientRect(hwnd, out var client) || !ClientToScreen(hwnd, ref origin)) return null;
+        return ToolbarIconPlacement.CalculateFixed(origin.X, origin.Y, client.Right - client.Left, client.Bottom - client.Top, scale);
     }
 
     private bool IsCodexWindow(IntPtr hwnd)
@@ -150,13 +181,14 @@ public sealed class CodexToolbarIconService : IDisposable
     }
 
     private delegate void WinEventCallback(IntPtr hook, uint eventType, IntPtr hwnd, int objectId, int childId, uint threadId, uint time);
-    [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hwnd, out NativeRect rect);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hwnd, ref NativePoint point);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
@@ -164,4 +196,5 @@ public sealed class CodexToolbarIconService : IDisposable
     [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventCallback callback, uint processId, uint threadId, uint flags);
     [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hook);
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+    [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int DwmGetFrameBounds(IntPtr hwnd, int attribute, out NativeRect value, int size);
 }

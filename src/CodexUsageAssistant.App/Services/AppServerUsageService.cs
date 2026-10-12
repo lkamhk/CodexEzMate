@@ -59,6 +59,12 @@ public sealed class AppServerUsageService : IAppServerUsageReader
         {
             return Failed("App Server 讀取逾時。", "App Server request timed out.");
         }
+        catch (InvalidOperationException ex) when (ex.InnerException is HostRpcException)
+        {
+            var code = ((HostRpcException)ex.InnerException!).Code;
+            return Failed($"App Server 拒絕用量讀取（RPC {code}）；請檢查 Proxy／網絡及 Codex 登入狀態。",
+                $"App Server rejected the usage read (RPC {code}); check proxy/network and Codex sign-in.");
+        }
         catch (Exception ex) when (ex is IOException or Win32Exception or InvalidOperationException or JsonException or ArgumentException or KeyNotFoundException or UnauthorizedAccessException)
         {
             return Failed("無法讀取 App Server 用量；請確認 Codex 已登入 ChatGPT，並檢查 codex.exe 路徑。",
@@ -77,20 +83,15 @@ public sealed class AppServerUsageService : IAppServerUsageReader
         if (!string.IsNullOrWhiteSpace(configured))
         {
             var path = Environment.ExpandEnvironmentVariables(configured.Trim().Trim('"'));
+            path = CodexExecutableLocator.ResolveManaged(path);
             if (!Path.IsPathFullyQualified(path) || !path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
                 throw new FileNotFoundException("A full path to codex.exe is required.");
             return path;
         }
         var bundled = Path.Combine(AppContext.BaseDirectory, "runtime", "codex", "codex.exe");
         if (File.Exists(bundled)) return bundled;
-        var desktopRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenAI", "Codex", "bin");
-        if (Directory.Exists(desktopRoot))
-        {
-            var desktop = Directory.EnumerateDirectories(desktopRoot)
-                .Select(directory => Path.Combine(directory, "codex.exe")).Where(File.Exists)
-                .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
-            if (desktop is not null) return desktop;
-        }
+        var desktop = CodexExecutableLocator.LatestDesktop();
+        if (desktop is not null) return desktop;
         foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
         {
             if (string.IsNullOrWhiteSpace(directory)) continue;

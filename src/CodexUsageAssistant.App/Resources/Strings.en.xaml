@@ -2,10 +2,10 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
   <sys:String x:Key="HotkeySettings">Keyboard shortcuts</sys:String>
-  <sys:String x:Key="SettingsTitle">Codex EzMate v1.21.9 Settings</sys:String>
-  <sys:String x:Key="LoginTitle">Codex EzMate v1.21.9 — Sign in to ChatGPT</sys:String>
-  <sys:String x:Key="PickerTitle">Codex EzMate v1.21.9 — Pick Resume Position</sys:String>
-  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.21.9 — Usage Details</sys:String>
+  <sys:String x:Key="SettingsTitle">Codex EzMate v1.22.7 Settings</sys:String>
+  <sys:String x:Key="LoginTitle">Codex EzMate v1.22.7 — Sign in to ChatGPT</sys:String>
+  <sys:String x:Key="PickerTitle">Codex EzMate v1.22.7 — Pick Resume Position</sys:String>
+  <sys:String x:Key="TrayDetailsTitle">Codex EzMate v1.22.7 — Usage Details</sys:String>
   <sys:String x:Key="UsageOverview">Your usage at a glance</sys:String>
   <sys:String x:Key="UsageSourceTab">Data source</sys:String>
   <sys:String x:Key="UsageSourceTitle">Usage data source</sys:String>
@@ -97,11 +97,11 @@
   <sys:String x:Key="HostLogin">Sign in to Codex</sys:String>
   <sys:String x:Key="HostModels">Models</sys:String>
   <sys:String x:Key="HostCancelLogin">Cancel sign-in</sys:String>
-  <sys:String x:Key="HostExecutable">Full codex.exe path (required)</sys:String>
+  <sys:String x:Key="HostExecutable">codex.exe path (blank = automatic)</sys:String>
   <sys:String x:Key="HostDetect">Auto-detect</sys:String>
   <sys:String x:Key="TrayUsageIcon">Show remaining quota in tray icon (5-hour, otherwise weekly)</sys:String>
-  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.21.9 — Server host</sys:String>
-  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.21.9 — Goal monitoring</sys:String>
+  <sys:String x:Key="HostWindowTitle">Codex EzMate v1.22.7 — Server host</sys:String>
+  <sys:String x:Key="GoalWindowTitle">Codex EzMate v1.22.7 — Goal monitoring</sys:String>
   <sys:String x:Key="CloseWindow">Close</sys:String>
   <sys:String x:Key="AutoCheckUpdates">Automatically check for updates at startup</sys:String>
   <sys:String x:Key="GoalBackgroundHelp">Goal resume has succeeded in live testing. When quota is available, selected Desktop Goals resume through a continuation message, consuming tokens and usage quota.</sys:String>
@@ -138,4 +138,8 @@
   <sys:String x:Key="ResetWatchEvidenceHint">Classification supplied by the feed; not independently verified by EzMate.</sys:String>
   <sys:String x:Key="ResetWatchSave">Save settings</sys:String>
   <sys:String x:Key="ResetWatchAccountHint">Announcements do not confirm account receipt. All times are local.</sys:String>
+  <sys:String x:Key="ResetWatchPopup">Show a popup for new announcements</sys:String>
+  <sys:String x:Key="ResetWatchPopupKeepOpen">By default, keep it open until you close it.</sys:String>
+  <sys:String x:Key="ResetWatchPopupAutoClose">Auto-close</sys:String>
+  <sys:String x:Key="ResetWatchPopupSeconds">seconds later</sys:String>
 </ResourceDictionary>

@@ -18,6 +18,7 @@ public sealed class ResetWatchService : IDisposable
     private bool _initialized;
     private bool _disposed;
     private int _failures;
+    private DateTimeOffset? _retryNotBefore;
     public ResetWatchSettings Settings { get; private set; } = new();
     public ResetWatchState State { get; private set; } = new();
     public string? Error { get; private set; }
@@ -39,6 +40,11 @@ public sealed class ResetWatchService : IDisposable
             try
             {
                 var settings = await _store.LoadSettingsAsync(token).ConfigureAwait(false) ?? new();
+                if (string.Equals(settings.FeedUrl?.TrimEnd('/'), ResetWatchSettings.LegacyFeedUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    settings = settings with { FeedUrl = ResetWatchSettings.DefaultFeedUrl };
+                    await _store.SaveSettingsAsync(settings, token).ConfigureAwait(false);
+                }
                 ValidateSettings(settings);
                 Settings = settings;
             }
@@ -68,9 +74,10 @@ public sealed class ResetWatchService : IDisposable
     public static void ValidateSettings(ResetWatchSettings settings)
     {
         if (settings.FeedUrl is null || settings.PollIntervalMinutes is < 5 or > 60
+            || settings.PopupAutoCloseSeconds is < 1 or > 3600
             || (!string.IsNullOrEmpty(settings.FeedUrl) && !ResetFeedClient.TryGetHttpsUri(settings.FeedUrl, out _))
             || (settings.Enabled && string.IsNullOrWhiteSpace(settings.FeedUrl)))
-            throw new InvalidDataException("Use an HTTPS feed URL and a polling interval of 5–60 minutes.");
+            throw new InvalidDataException("Use an HTTPS feed URL, a polling interval of 5–60 minutes, and a popup timeout of 1–3600 seconds when enabled.");
     }
 
     public async Task SaveSettingsAsync(ResetWatchSettings settings, CancellationToken token = default)
@@ -88,6 +95,7 @@ public sealed class ResetWatchService : IDisposable
             Settings = settings;
             Error = null;
             _failures = 0;
+            _retryNotBefore = null;
         }
         finally { _gate.Release(); }
         Changed?.Invoke();
@@ -105,6 +113,7 @@ public sealed class ResetWatchService : IDisposable
         try
         {
             if (_disposed || !Settings.Enabled || !ResetFeedClient.TryGetHttpsUri(Settings.FeedUrl, out var address)) return;
+            if (_retryNotBefore > _time.GetUtcNow()) return;
             IsRefreshing = true;
             LastAttemptAt = _time.GetUtcNow();
             Changed?.Invoke();
@@ -112,6 +121,11 @@ public sealed class ResetWatchService : IDisposable
             var feed = response.NotModified ? State.Feed : response.Feed;
             if (feed is null) throw new InvalidDataException("HTTP 304 requires a valid cached feed.");
             var now = _time.GetUtcNow();
+            if (CodexResetsApiAdapter.Matches(address) && feed.FeedId == CodexResetsApiAdapter.FeedId)
+            {
+                if (response.NotModified) feed = CodexResetsApiAdapter.Revalidated(feed, now);
+                feed = CodexResetsApiAdapter.Reconcile(feed, State);
+            }
             ResetFeedClient.Validate(feed, now);
             if (State.Feed is { } old && old.FeedId == feed.FeedId)
             {
@@ -136,6 +150,8 @@ public sealed class ResetWatchService : IDisposable
             _failures = 0;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { batch = null; }
+        catch (ResetFeedBackoffException ex)
+        { _retryNotBefore = _time.GetUtcNow() + ex.Delay; Error = "fetch"; _failures = Math.Min(5, _failures + 1); batch = null; }
         catch (Exception ex) when (IsExpected(ex))
         { Error = ex is JsonException or InvalidDataException ? "invalid" : "fetch"; _failures = Math.Min(5, _failures + 1); batch = null; }
         finally { IsRefreshing = false; _gate.Release(); Changed?.Invoke(); }
@@ -155,7 +171,9 @@ public sealed class ResetWatchService : IDisposable
                 else
                 {
                     var minutes = Math.Min(60, Settings.PollIntervalMinutes * Math.Pow(2, _failures));
-                    await _wake.WaitAsync(TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(Random.Shared.Next(0, 31)), _lifetime.Token).ConfigureAwait(false);
+                    var delay = TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(Random.Shared.Next(0, 31));
+                    if (_retryNotBefore - _time.GetUtcNow() is { } retry && retry > delay) delay = retry;
+                    await _wake.WaitAsync(delay, _lifetime.Token).ConfigureAwait(false);
                 }
             }
         }

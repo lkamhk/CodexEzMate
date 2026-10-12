@@ -33,12 +33,13 @@ internal sealed class AppServerHostRuntime : IAppServerHostRuntime
             settings.HostWorkingDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexUsageAssistant", "app-server-work");
             changed = true;
         }
-        if (string.IsNullOrWhiteSpace(settings.HostExecutablePath))
+        if (string.IsNullOrWhiteSpace(settings.HostExecutablePath) || CodexExecutableLocator.IsManagedPath(settings.HostExecutablePath))
         {
             try
             {
-                settings.HostExecutablePath = (findExecutable ?? (() => AppServerUsageService.FindExecutable(null)))();
-                changed = true;
+                var detected = (findExecutable ?? (() => AppServerUsageService.FindExecutable(settings.HostExecutablePath)))();
+                if (!string.Equals(detected, settings.HostExecutablePath, StringComparison.OrdinalIgnoreCase))
+                { settings.HostExecutablePath = detected; changed = true; }
             }
             catch (Exception ex) when (CodexAppServerHost.IsExpected(ex)) { }
         }
@@ -75,6 +76,7 @@ internal sealed class AppServerHostRuntime : IAppServerHostRuntime
     {
         if (System.Security.Principal.WindowsIdentity.GetCurrent().IsSystem)
             throw new InvalidDataException("Run the host as the signed-in Windows user, not SYSTEM.");
+        FillDefaults(settings);
         Validate(settings, true);
         var start = new ProcessStartInfo(settings.HostExecutablePath!)
         {

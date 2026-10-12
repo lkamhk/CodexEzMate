@@ -10,10 +10,11 @@ public partial class SettingsWindow : Window
     private readonly ISettingsService _settings;
     private readonly IProxyTestService _proxyTester;
     private readonly CodexAppServerHost? _host;
+    private readonly SessionAutoNamingService? _naming;
     private WindowPosition _model = new();
-    public SettingsWindow(ISettingsService settings, IProxyTestService proxyTester, CodexAppServerHost? host = null)
+    public SettingsWindow(ISettingsService settings, IProxyTestService proxyTester, CodexAppServerHost? host = null, SessionAutoNamingService? naming = null)
     {
-        _settings = settings; _proxyTester = proxyTester; _host = host;
+        _settings = settings; _proxyTester = proxyTester; _host = host; _naming = naming;
         InitializeComponent();
         Loaded += OnLoaded;
     }
@@ -40,6 +41,9 @@ public partial class SettingsWindow : Window
         AutoRefreshMinutesTextBox.Text = _model.AutoRefreshIntervalMinutes is > 0
             ? _model.AutoRefreshIntervalMinutes.Value.ToString()
             : string.Empty;
+        try { await NamingEditor.InitializeAsync(_naming); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        { System.Windows.MessageBox.Show(ex.Message, L("命名設定讀取失敗", "Could not load naming settings")); }
     }
     private async void OnTestClick(object sender, RoutedEventArgs e)
     {
@@ -62,6 +66,7 @@ public partial class SettingsWindow : Window
     {
         try
         {
+            NamingEditor.ValidateRules();
             var server = ProxyServerTextBox.Text.Trim();
             if (ProxyEnabledCheckBox.IsChecked == true) ProxyConfiguration.NormalizeAndValidate(server);
             ProxyConfiguration.BuildBrowserArguments(ProxyEnabledCheckBox.IsChecked == true ? server : null, BypassTextBox.Text.Trim());
@@ -94,10 +99,12 @@ public partial class SettingsWindow : Window
             _model.CodexExecutablePath = CodexExecutableTextBox.Text.Trim();
 
             await _settings.SaveAsync(_model, CancellationToken.None);
+            await NamingEditor.SaveAsync();
             if (_host is not null) await _host.ApplySettingsAsync(_model);
             DialogResult = true;
         }
-        catch (InvalidDataException ex) { System.Windows.MessageBox.Show(ex.Message, L("設定錯誤", "Settings error"), MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        { System.Windows.MessageBox.Show(ex.Message, L("設定錯誤", "Settings error"), MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     private void OnCancelClick(object sender, RoutedEventArgs e) => DialogResult = false;

@@ -35,7 +35,10 @@ public partial class FloatingBallViewModel : ObservableObject
     private readonly IGoalResumeService _goalResume;
     private readonly UsageAppServerSession? _usageSession;
     private readonly CodexAppServerHost? _host;
+    private readonly SessionAutoNamingService? _naming;
     private UsageData? _lastUsage;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private bool _usageStale;
     private readonly CancellationTokenSource _backgroundRefreshCts = new();
     private int _externalUsageRefreshRequested;
     // Announcements only request a read; existing account checks still own execution decisions.
@@ -182,7 +185,7 @@ public partial class FloatingBallViewModel : ObservableObject
     public FloatingBallViewModel(IUsageLoginService usageLogin,
         ISettingsService settings, IProxyTestService proxyTester, IUsageCacheService cache,
         IAutoResumeScheduler autoResumeScheduler, IAutoResumeSettingsService autoResumeSettings,
-        IConversationDiscoveryService conversationDiscovery, IGoalResumeService goalResume, CodexAppServerHost? host = null, AppUpdateService? updates = null, UsageAppServerSession? usageSession = null)
+        IConversationDiscoveryService conversationDiscovery, IGoalResumeService goalResume, CodexAppServerHost? host = null, AppUpdateService? updates = null, UsageAppServerSession? usageSession = null, SessionAutoNamingService? naming = null)
     {
         _usageLogin = usageLogin;
         _settings = settings;
@@ -195,6 +198,7 @@ public partial class FloatingBallViewModel : ObservableObject
         _usageSession = usageSession;
         _host = host;
         _updates = updates;
+        _naming = naming;
     }
 
     public async Task InitializeAsync()
@@ -207,7 +211,7 @@ public partial class FloatingBallViewModel : ObservableObject
         if (cached?.Status == UsageStatus.Available)
         {
             ApplyUsage(cached);
-            StatusMessage = $"{L("快取資料", "Cached data")}：5h {FiveHourPercent} · W {WeeklyPercent}";
+            MarkUsageStale(L("正在取得最新用量；上次快取不作即時額度顯示。", "Fetching current usage; cached quota is not shown as current."));
         }
         _autoResumeScheduler.UsageUpdated += usage => System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() => ApplyFreshUsage(usage)));
         _autoResumeScheduler.StatusChanged += (_, _) => System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() => StatusMessage = _autoResumeScheduler.Status));
@@ -220,6 +224,7 @@ public partial class FloatingBallViewModel : ObservableObject
     public void SetLanguage(AppLanguage language)
     {
         if (_lastUsage is not null) ApplyUsage(_lastUsage);
+        if (_usageStale) MarkUsageStale(StatusMessage);
     }
 
     [RelayCommand]
@@ -265,13 +270,16 @@ public partial class FloatingBallViewModel : ObservableObject
 
     private async Task RefreshInBackgroundAsync(CancellationToken cancellationToken, string loadingMessage)
     {
+        if (!await _refreshGate.WaitAsync(0, cancellationToken)) return;
+        try
+        {
         StatusMessage = loadingMessage;
         var usage = await _usageLogin.RefreshUsageAsync(cancellationToken);
         if (usage?.Status != UsageStatus.Available)
         {
-            StatusMessage = usage?.Status == UsageStatus.LoginRequired
+            MarkUsageStale(usage?.Status == UsageStatus.LoginRequired
                 ? L("登入已失效，請按「登入／取得額度」重新登入", "Sign-in expired. Select Sign in / Get usage")
-                : $"{L("未更新", "Not updated")}：{usage?.ErrorMessage ?? L("背景讀取失敗", "Background read failed")}";
+                : $"{L("未更新", "Not updated")}：{usage?.ErrorMessage ?? L("背景讀取失敗", "Background read failed")}");
             return;
         }
         ApplyFreshUsage(usage);
@@ -282,6 +290,10 @@ public partial class FloatingBallViewModel : ObservableObject
         }
         await _cache.SaveAsync(usage, cancellationToken);
         StatusMessage = FormatUpdateStatus(L("已更新", "Updated"), usage);
+        }
+        catch (Exception ex) when (CodexAppServerHost.IsExpected(ex) && !cancellationToken.IsCancellationRequested)
+        { MarkUsageStale(L("用量讀取失敗，稍後會重新連線。", "Usage read failed; the connection will be retried.")); }
+        finally { _refreshGate.Release(); }
     }
 
     private async Task RunBackgroundRefreshAsync(CancellationToken cancellationToken)
@@ -296,6 +308,8 @@ public partial class FloatingBallViewModel : ObservableObject
         {
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
+                try
+                {
                 var settings = await _settings.LoadAsync(cancellationToken) ?? new WindowPosition();
                 ShowDomLoginMenu = settings.UsageReadMode == UsageReadMode.DomOnly;
                 await notifications.ConfigureAsync(settings, cancellationToken);
@@ -316,14 +330,15 @@ public partial class FloatingBallViewModel : ObservableObject
                 var timed = interval is not null && nextRefreshAt is not null && DateTimeOffset.Now >= nextRefreshAt;
                 if (!timed && !notified && !requested && !startupRefresh && !(dayChanged && settings.RefreshOnServerNotification)) continue;
 
-                var autoSettings = await _autoResumeSettings.LoadAsync(cancellationToken);
-                if (!autoSettings.MonitorEnabled || notified || requested || dayChanged || startupRefresh)
-                {
-                    try { await RefreshInBackgroundAsync(cancellationToken, L("背景更新中…", "Updating in background…")); }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-                    { StatusMessage = L("背景更新失敗，會在下次事件或定時更新重試。", "Background refresh failed; retrying on the next event or timed update."); }
-                }
+                // Display polling must not depend on Goal monitoring or its reset cooldown.
+                await RefreshInBackgroundAsync(cancellationToken, L("背景更新中…", "Updating in background…"));
                 nextRefreshAt = interval is { } value ? DateTimeOffset.Now.Add(value) : null;
+                }
+                catch (Exception ex) when (CodexAppServerHost.IsExpected(ex) && !cancellationToken.IsCancellationRequested)
+                {
+                    MarkUsageStale(L("背景更新暫時失敗，正在等待重試。", "Background refresh temporarily failed; waiting to retry."));
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -336,6 +351,8 @@ public partial class FloatingBallViewModel : ObservableObject
 
     internal void ApplyFreshUsage(UsageData usage)
     {
+        if (_lastUsage is not null && usage.LastUpdatedAt < _lastUsage.LastUpdatedAt) return;
+        _usageStale = false;
         var added = _resetIncrease.Observe(usage);
         var recovered = GoalProtocol.UsageAllowsResume(usage) && (_lastUsage is null || !GoalProtocol.UsageAllowsResume(_lastUsage));
         ApplyUsage(usage);
@@ -390,6 +407,16 @@ public partial class FloatingBallViewModel : ObservableObject
             : LocalizationService.Pick("未提供", "Not provided");
         UsageResetExpiresDisplay = FormatUsageResetEntries(usage);
         LastUpdated = usage.LastUpdatedAt.ToString("HH:mm");
+    }
+
+    internal void MarkUsageStale(string message)
+    {
+        _usageStale = true;
+        FiveHourPercent = WeeklyPercent = PrimaryLimitPercent = "—";
+        FiveHourValue = WeeklyValue = 0; PrimaryLimitValue = double.NaN;
+        CanUseReset = false; AvailableUsageResetDisplay = "—";
+        ResetAvailabilityHint = L("等待最新用量確認。", "Waiting for current usage.");
+        StatusMessage = message;
     }
 
     private static string FormatReset(string? raw, DateTimeOffset? parsed) =>
@@ -496,7 +523,7 @@ public partial class FloatingBallViewModel : ObservableObject
         var existing = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
         if (existing is not null) { ShowIndependentWindow(existing); return; }
         var owner = System.Windows.Application.Current.Windows.OfType<FloatingBallWindow>().FirstOrDefault();
-        var window = new SettingsWindow(_settings, _proxyTester, _host) { Owner = owner };
+        var window = new SettingsWindow(_settings, _proxyTester, _host, _naming) { Owner = owner };
         if (window.ShowDialog() != true) return;
         var settings = await _settings.LoadAsync(CancellationToken.None);
         if (settings is null) return;

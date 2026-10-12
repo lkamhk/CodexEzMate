@@ -17,7 +17,9 @@ public sealed class UsageAppServerSession : IDisposable, IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Func<WindowPosition, int?, CancellationToken, Task<IGoalRpcConnection>> _factory;
+    private readonly Func<string?, string?> _resolveExecutable;
     private IGoalRpcConnection? _connection;
+    private IGoalRpcConnection? _faultedConnection;
     private string? _key;
     private Task? _maintenance;
     private DateTimeOffset _lastUsed;
@@ -25,14 +27,15 @@ public sealed class UsageAppServerSession : IDisposable, IAsyncDisposable
     private Action? _changed;
     private readonly ConcurrentDictionary<string, string> _notificationHashes = new();
     public UsageAppServerSession(ISettingsService settings, CodexAppServerHost? host = null) : this(settings, host,
-        (options, port, token) => port is int value ? GoalRpcConnection.ConnectAsync(value, token) : StdioUsageConnection.ConnectAsync(options, token)) { }
+        (options, port, token) => port is int value ? GoalRpcConnection.ConnectAsync(value, token) : StdioUsageConnection.ConnectAsync(options, token),
+        path => AppServerUsageService.FindExecutable(path)) { }
     internal UsageAppServerSession(ISettingsService settings, CodexAppServerHost? host,
-        Func<WindowPosition, int?, CancellationToken, Task<IGoalRpcConnection>> factory)
-    { _settings = settings; _host = host; _factory = factory; }
+        Func<WindowPosition, int?, CancellationToken, Task<IGoalRpcConnection>> factory, Func<string?, string?>? resolveExecutable = null)
+    { _settings = settings; _host = host; _factory = factory; _resolveExecutable = resolveExecutable ?? (path => path); }
 
     internal void Subscribe(Action changed) { _changed += changed; StartMaintenance(); }
     internal void Unsubscribe(Action changed) => _changed -= changed;
-    internal UsageAppServerSession CreateFresh() => new(_settings, null, _factory);
+    internal UsageAppServerSession CreateFresh() => new(_settings, null, _factory, _resolveExecutable);
     internal async Task InvalidateAsync(CancellationToken token)
     {
         await _gate.WaitAsync(token).ConfigureAwait(false);
@@ -79,12 +82,16 @@ public sealed class UsageAppServerSession : IDisposable, IAsyncDisposable
         try
         {
             var settings = await _settings.LoadAsync(linked.Token).ConfigureAwait(false) ?? new();
-            settings.CodexExecutablePath = executable ?? settings.CodexExecutablePath;
+            settings.CodexExecutablePath = _resolveExecutable(executable ?? settings.CodexExecutablePath);
             var port = _host?.CompatibleUsagePort(settings);
-            var key = JsonSerializer.Serialize(new { settings.CodexExecutablePath, port, settings.ProxyEnabled, settings.ProxyServer,
+            var binaryStamp = FileStamp(settings.CodexExecutablePath);
+            var authStamp = FileStamp(Path.Combine(LocalTokenUsageService.CodexHome, "auth.json"));
+            var key = JsonSerializer.Serialize(new { settings.CodexExecutablePath, binaryStamp, authStamp, port, settings.ProxyEnabled, settings.ProxyServer,
                 settings.ProxyBypassList, settings.ProxyUsername, settings.EncryptedProxyPassword });
-            if (_connection?.IsConnected != true || _key != key)
+            if (_connection?.IsConnected != true || _key != key || ReferenceEquals(_faultedConnection, _connection))
             {
+                // Do not close the transport underneath an in-flight rename or reset request.
+                while (Volatile.Read(ref _active) > 0) await Task.Delay(25, linked.Token).ConfigureAwait(false);
                 await CloseAsync().ConfigureAwait(false);
                 _connection = await _factory(settings, port, linked.Token).ConfigureAwait(false); _key = key;
                 var current = _connection;
@@ -113,10 +120,21 @@ public sealed class UsageAppServerSession : IDisposable, IAsyncDisposable
         finally { _gate.Release(); }
         try { return method.Length == 0 ? default : await connection.RequestAsync(method, parameters, linked.Token).ConfigureAwait(false); }
         catch (HostRpcException ex) { throw new InvalidOperationException($"App Server rejected {method} ({ex.Code}).", ex); }
+        catch (Exception ex) when (ex is IOException or System.Net.WebSockets.WebSocketException or OperationCanceledException)
+        {
+            _faultedConnection = connection;
+            throw;
+        }
         finally { Interlocked.Decrement(ref _active); _lastUsed = DateTimeOffset.UtcNow; }
     }
     private async Task CloseAsync()
-    { var old = _connection; _connection = null; _key = null; _notificationHashes.Clear(); if (old is not null) await old.DisposeAsync().ConfigureAwait(false); }
+    { var old = _connection; _connection = null; _faultedConnection = null; _key = null; _notificationHashes.Clear(); if (old is not null) await old.DisposeAsync().ConfigureAwait(false); }
+    private static string FileStamp(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "";
+        try { var file = new FileInfo(path); return file.Exists ? $"{file.LastWriteTimeUtc.Ticks}:{file.Length}" : ""; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { return ""; }
+    }
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
     public async ValueTask DisposeAsync()
     {
@@ -154,7 +172,7 @@ internal sealed class StdioUsageConnection : IGoalRpcConnection
         client._reader = client.ReadAsync();
         try
         {
-            await client.RequestAsync("initialize", new { clientInfo = new { name = "codex_ezmate_usage", version = "1.21.9" }, capabilities = new { experimentalApi = true } }, token).ConfigureAwait(false);
+            await client.RequestAsync("initialize", new { clientInfo = new { name = "codex_ezmate_usage", version = "1.22.7" }, capabilities = new { experimentalApi = true } }, token).ConfigureAwait(false);
             await client.SendAsync(new { method = "initialized" }, token).ConfigureAwait(false); return client;
         }
         catch { await client.DisposeAsync().ConfigureAwait(false); throw; }

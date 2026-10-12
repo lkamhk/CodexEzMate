@@ -35,13 +35,34 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
     private ResetWatchService? _resetWatch;
     private ResetWatchWindow? _resetWatchWindow;
     private bool _resetNoticeActive;
+    private ResetNoticeWindow? _resetPopup;
+    private ResetNoticeWindow? _previewPopup;
+
+    public void ShowResetPreview() => RunOnUiThread(() =>
+    {
+        if (_previewPopup is null)
+        {
+            _previewPopup = new ResetNoticeWindow(OpenResetWatch, isPreview: true);
+            _previewPopup.Closed += (_, _) => _previewPopup = null;
+        }
+        // Local sample only: no network request and no writes to the real notification ledger.
+        _previewPopup.Present([new ResetAnnouncement
+        {
+            Id = "ezmate-local-notification-preview", Revision = 1,
+            Title = T("【測試通知】這是通知小視窗示範，並非真實 Reset 公告。", "[TEST] Notification preview only; this is not a real reset announcement."),
+            Status = ResetAnnouncementStatus.Preview, Evidence = ResetEvidence.Community,
+            Impacts = [ResetImpact.Global], PublishedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+        }], _resetWatch?.Settings.PopupAutoCloseSeconds);
+    });
     private CodexToolbarIconService? _toolbarIcon;
     private Forms.ToolStripMenuItem? _toolbarIconItem;
+    private Forms.ToolStripMenuItem? _fixedToolbarItem;
 
     public void AttachToolbarIcon(CodexToolbarIconService icon)
     {
         _toolbarIcon = icon;
         icon.EnabledChanged += enabled => { if (_toolbarIconItem is not null) _toolbarIconItem.Checked = enabled; };
+        icon.FixedModeChanged += enabled => { if (_fixedToolbarItem is not null) _fixedToolbarItem.Checked = enabled; };
         BuildMenu();
     }
 
@@ -60,7 +81,7 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
         _icon = new Forms.NotifyIcon
         {
             Icon = _appIcon,
-            Text = "Codex EzMate v1.21.9",
+            Text = "Codex EzMate v1.22.7",
             Visible = false
         };
         BuildMenu();
@@ -116,6 +137,7 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
         _menu.Items.Add(T("重新整理用量", "Refresh usage"), null,
             (_, _) => RunOnUiThread(() => _viewModel.RefreshCommand.Execute(null)));
         _menu.Items.Add(T("Reset 動態", "Reset activity"), null, (_, _) => RunOnUiThread(OpenResetWatch));
+        _menu.Items.Add(T("測試通知小視窗", "Test notification popup"), null, (_, _) => ShowResetPreview());
         if (_viewModel.ShowDomLoginMenu)
             _menu.Items.Add(T("登入／取得額度", "Sign in / Get usage"), null,
                 (_, _) => RunOnUiThread(() => _viewModel.LoginCommand.Execute(null)));
@@ -128,6 +150,10 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
                 (_, _) => RunOnUiThread(() => _toolbarIcon.SetEnabled(!_toolbarIcon.Enabled)))
             { Checked = _toolbarIcon.Enabled };
             _menu.Items.Add(_toolbarIconItem);
+            _fixedToolbarItem = new Forms.ToolStripMenuItem(T("圖示固定模式（側欄頂部）", "Fixed icon (sidebar header)"), null,
+                (_, _) => RunOnUiThread(() => _toolbarIcon.SetFixedMode(!_toolbarIcon.FixedMode)))
+            { Checked = _toolbarIcon.FixedMode };
+            _menu.Items.Add(_fixedToolbarItem);
         }
         _autoNameItem = new Forms.ToolStripMenuItem(T("自動命名會話", "Automatically name sessions"), null,
             async (_, _) => await ToggleNamingAsync())
@@ -220,10 +246,21 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
     private void OnResetAnnouncements(IReadOnlyList<ResetAnnouncement> items) => RunOnUiThread(() =>
     {
         if (_icon is null || _resetWatch?.Settings.Enabled != true || items.Count == 0) return;
+        if (_resetWatch.Settings.ShowPopup)
+        {
+            if (_resetPopup is null)
+            {
+                _resetPopup = new ResetNoticeWindow(OpenResetWatch);
+                _resetPopup.Closed += (_, _) => _resetPopup = null;
+            }
+            _resetPopup.Present(items, _resetWatch.Settings.PopupAutoCloseSeconds);
+            return;
+        }
         var lines = items.Take(3).Select(item => ResetWatchViewModel.StatusLabel(item.Status) + " · "
             + ResetWatchViewModel.EvidenceLabel(item.Evidence) + "\n" + (item.Title.Length > 140 ? item.Title[..140] + "…" : item.Title));
         var message = string.Join("\n", lines) + "\n" + T("公告不代表帳戶已到帳。點擊查看來源及詳情。", "Announcements do not confirm account receipt. Click to review sources and details.");
         if (items.Count > 3) message += T($"\n另有 {items.Count - 3} 項更新。", $"\n{items.Count - 3} more update(s).");
+        if (items.Any(i => i.Evidence == ResetEvidence.Tracker)) message += "\nData from https://codex-resets.com";
         _resetNoticeActive = true;
         _icon.ShowBalloonTip(8000, T("Reset 動態", "Reset activity"), message, Forms.ToolTipIcon.Info);
     });
@@ -318,7 +355,7 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
         }
         var usage = $"5h {_viewModel.FiveHourPercent} · W {_viewModel.WeeklyPercent}";
         var reset = $"{T("可用 reset", "Available resets")}：{_viewModel.AvailableUsageResetDisplay}";
-        _icon.Text = TruncateTooltip($"Codex EzMate v1.21.9 | {usage}");
+        _icon.Text = TruncateTooltip($"Codex EzMate v1.22.7 | {usage}");
         if (_usageItem is not null) _usageItem.Text = usage;
         if (_resetItem is not null) _resetItem.Text = reset;
     }
@@ -341,6 +378,8 @@ public sealed class TrayIconService : IDisposable, ITrayNotificationService
     {
         if (_resetWatch is not null) _resetWatch.AnnouncementsAvailable -= OnResetAnnouncements;
         _resetWatchWindow?.Close();
+        _resetPopup?.Close();
+        _previewPopup?.Close();
         _resetWatch = null;
         if (_naming is not null) _naming.Changed -= UpdateNamingCheck;
         _sessionBrowser.Dispose();

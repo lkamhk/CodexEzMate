@@ -19,6 +19,7 @@ public sealed class CodexAppServerHost : IAsyncDisposable, IDisposable
     private FileStream? _startupLock;
     private WindowPosition _options = new();
     private string? _configuration;
+    private string? _runningExecutable;
     private DateTimeOffset _next;
     private DateTimeOffset? _startupDeadline;
     private DateTimeOffset? _healthySince;
@@ -46,7 +47,7 @@ public sealed class CodexAppServerHost : IAsyncDisposable, IDisposable
         if (State != AppServerHostState.Ready || !OwnsServer) return null;
         try
         {
-            if (!string.Equals(AppServerUsageService.FindExecutable(usage.CodexExecutablePath), AppServerUsageService.FindExecutable(_options.HostExecutablePath), StringComparison.OrdinalIgnoreCase)) return null;
+            if (!string.Equals(AppServerUsageService.FindExecutable(usage.CodexExecutablePath), _runningExecutable ?? AppServerUsageService.FindExecutable(_options.HostExecutablePath), StringComparison.OrdinalIgnoreCase)) return null;
             if (usage.ProxyEnabled != _options.ProxyEnabled) return null;
             if (usage.ProxyEnabled && (usage.ProxyServer != _options.ProxyServer || usage.ProxyBypassList != _options.ProxyBypassList ||
                 usage.ProxyUsername != _options.ProxyUsername || usage.EncryptedProxyPassword != _options.EncryptedProxyPassword)) return null;
@@ -189,7 +190,21 @@ public sealed class CodexAppServerHost : IAsyncDisposable, IDisposable
         SetState(AppServerHostState.Starting, L("正在背景啟動 Codex App Server。", "Starting Codex App Server in the background."));
         try
         {
+            if (_runtime is AppServerHostRuntime)
+            {
+                var previous = _options.HostExecutablePath;
+                if (AppServerHostRuntime.FillDefaults(_options))
+                {
+                    var latest = await _settings.LoadAsync(token) ?? new WindowPosition();
+                    if (string.Equals(latest.HostExecutablePath, previous, StringComparison.OrdinalIgnoreCase))
+                    {
+                        latest.HostExecutablePath = _options.HostExecutablePath;
+                        await _settings.SaveAsync(latest, token);
+                    }
+                }
+            }
             _owned = _runtime.Start(_options);
+            _runningExecutable = _options.HostExecutablePath;
             OwnsServer = true;
             _startupDeadline = DateTimeOffset.UtcNow.AddSeconds(30);
             _next = DateTimeOffset.UtcNow.AddMilliseconds(500);

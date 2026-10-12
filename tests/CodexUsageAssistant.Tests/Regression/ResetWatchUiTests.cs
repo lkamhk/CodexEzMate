@@ -41,6 +41,7 @@ public sealed class ResetWatchUiTests
                 var model = (ResetWatchViewModel)window.DataContext;
                 Assert.True(model.Enabled); Assert.True(model.CanCheck); Assert.False(model.NotifyCommunity);
                 Assert.True(model.NotifyAccountChanges);
+                Assert.True(model.ShowPopup); Assert.False(model.PopupAutoClose); Assert.Equal("30", model.PopupAutoCloseSeconds);
                 Assert.Equal(ResizeMode.CanResize, window.ResizeMode);
                 Assert.Null(window.Owner);
                 var row = Assert.Single(model.Events);
@@ -82,7 +83,8 @@ public sealed class ResetWatchUiTests
                 foreach (var key in new[] { "ResetWatchTitle", "ResetWatchHeading", "ResetWatchIntro", "ResetWatchActivity", "ResetWatchSettings",
                     "ResetWatchCheck", "ResetWatchEmpty", "ResetWatchEmptyTitle", "ResetWatchEvidenceHint", "ResetWatchDetails", "ResetWatchPrivacyHeading",
                     "ResetWatchEnable", "ResetWatchUrl", "ResetWatchTrust", "ResetWatchInterval", "ResetWatchNotices", "ResetWatchPreviews",
-                    "ResetWatchAnnouncements", "ResetWatchCommunity", "ResetWatchAccountNotices", "ResetWatchPrivacy", "ResetWatchSave", "ResetWatchAccountHint" })
+                    "ResetWatchAnnouncements", "ResetWatchCommunity", "ResetWatchPopup", "ResetWatchPopupKeepOpen", "ResetWatchPopupAutoClose",
+                    "ResetWatchPopupSeconds", "ResetWatchAccountNotices", "ResetWatchPrivacy", "ResetWatchSave", "ResetWatchAccountHint" })
                     Assert.False(string.IsNullOrWhiteSpace(window.TryFindResource(key)?.ToString()), key);
                 Capture(panel, "activity-" + resource);
                 Layout(panel, 700, 490);
